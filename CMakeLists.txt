@@ -30,12 +30,19 @@ set(SDL_STATIC ON)           # Enable static library
 # Make SDL3 available
 FetchContent_MakeAvailable(SDL3)
 
-add_executable(GravitySimulator src/main.c)
+# Automatically gather all .c files from the src directory
+file(GLOB SOURCES "src/*.c")
+
+# Automatically gather all .h files from the include directory
+file(GLOB HEADERS "src/*.h")
+
+add_executable(GravitySimulator ${SOURCES} ${HEADERS})
 
 # Add the SDL3 include directory, but add an alias for SDL.h
 target_include_directories(GravitySimulator PRIVATE
     ${SDL3_SOURCE_DIR}/include
     ${SDL3_SOURCE_DIR}/include/SDL3  # Include SDL3 headers
+    src
 )
 
 target_link_libraries(GravitySimulator PRIVATE SDL3::SDL3-static)
