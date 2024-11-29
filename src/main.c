@@ -37,12 +37,23 @@ int main(int argc, char** argv)
             }
         }
 
-        SDL_SetRenderDrawColor(renderer, 51, 77, 204, 255);
-        SDL_RenderClear(renderer);
+        if (!SDL_SetRenderDrawColor(renderer, 51, 77, 204, 255)) {
+            SDL_LogCritical(SDL_LOG_CATEGORY_RENDER, "Failed to set render draw color!\n%s\n", SDL_GetError());
+            goto exit;
+        }
 
-        SDL_RenderPresent(renderer);
+        if (!SDL_RenderClear(renderer)) {
+            SDL_LogCritical(SDL_LOG_CATEGORY_RENDER, "Failed to clear the rendering target!\n%s\n", SDL_GetError());
+            goto exit;
+        }
+
+        if (!SDL_RenderPresent(renderer)) {
+            SDL_LogCritical(SDL_LOG_CATEGORY_RENDER, "Failed to present the rendering target!\n%s\n", SDL_GetError());
+            goto exit;
+        }
     }
 
+exit:
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
