@@ -40,11 +40,11 @@ bool particle_system_init(struct particle_system* system)
 	pcg32_random_t rng = PCG32_INITIALIZER;
 
 	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
-		float pos_x = (float)pcg32_random_r(&rng) / (float)SDL_MAX_UINT32 * WINDOW_WIDTH;
-		float pos_y = (float)pcg32_random_r(&rng) / (float)SDL_MAX_UINT32 * WINDOW_HEIGHT;
-		float vel_x = ((WINDOW_WIDTH / 2) - pos_x)/SDL_abs((WINDOW_WIDTH / 2) - pos_x);
-		float vel_y = ((WINDOW_HEIGHT / 2) - pos_y)/SDL_abs((WINDOW_HEIGHT / 2) - pos_y);
-		float mass = (float)pcg32_random_r(&rng) / (float)SDL_MAX_UINT32;
+		const float pos_x = (float)pcg32_random_r(&rng) / (float)SDL_MAX_UINT32 * WINDOW_WIDTH;
+		const float pos_y = (float)pcg32_random_r(&rng) / (float)SDL_MAX_UINT32 * WINDOW_HEIGHT;
+		float vel_x = ((WINDOW_WIDTH / 2.0f) - pos_x)/SDL_fabsf((WINDOW_WIDTH / 2.0f) - pos_x);
+		float vel_y = ((WINDOW_HEIGHT / 2.0f) - pos_y)/SDL_fabsf((WINDOW_HEIGHT / 2.0f) - pos_y);
+		const float mass = (float)pcg32_random_r(&rng) / (float)SDL_MAX_UINT32;
 
 		if (SDL_isinff(vel_x)) vel_x = 0.0f;
 		if (SDL_isinff(vel_y)) vel_y = 0.0f;
@@ -61,7 +61,7 @@ bool particle_system_init(struct particle_system* system)
 	return true;
 }
 
-bool particle_system_free(struct particle_system* system)
+void particle_system_free(struct particle_system* system)
 {
 	SDL_aligned_free(system->pos_x);
 	SDL_aligned_free(system->pos_y);
@@ -76,13 +76,13 @@ bool particle_system_update(struct particle_system* system)
 
 	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
 		for (size_t j = i+1; j < MAX_PARTICLES; ++j) {
-			float pos_x_diff = system->pos_x[i] - system->pos_x[j];
-			float pos_y_diff = system->pos_y[i] - system->pos_y[j];
-			float distance_squared = pos_x_diff * pos_x_diff + pos_y_diff * pos_y_diff;
-			float distance = SDL_max(dt, SDL_sqrtf(distance_squared));
-			float force = (system->mass[i] * system->mass[j]) / (distance * distance * distance);
-			float force_x = force * pos_x_diff;
-			float force_y = force * pos_y_diff;
+			const float pos_x_diff = system->pos_x[i] - system->pos_x[j];
+			const float pos_y_diff = system->pos_y[i] - system->pos_y[j];
+			const float distance_squared = pos_x_diff * pos_x_diff + pos_y_diff * pos_y_diff;
+			const float distance = SDL_max(dt, SDL_sqrtf(distance_squared));
+			const float force = (system->mass[i] * system->mass[j]) / (distance * distance * distance);
+			const float force_x = force * pos_x_diff;
+			const float force_y = force * pos_y_diff;
 
 			system->vel_x[i] -= dt * force_x / system->mass[i];
 			system->vel_y[i] -= dt * force_y / system->mass[i];
