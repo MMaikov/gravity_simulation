@@ -1,6 +1,8 @@
 #pragma once
 #include <SDL.h>
 
+#include "random.h"
+
 struct particle_system
 {
 	float* pos_x;
@@ -10,6 +12,8 @@ struct particle_system
 	float* mass;
 
 	SDL_FPoint* points;
+
+	pcg32_random_t rng;
 };
 
 bool particle_system_init(struct particle_system* system);
