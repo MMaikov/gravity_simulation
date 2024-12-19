@@ -7,8 +7,7 @@
 #define SIMD_MEMORY_ALIGNMENT 32
 
 #include <immintrin.h>
-
-static float calculate_standard_distribution(struct particle_system* system);
+#include "simd_util.h"
 
 static void copy_pos_to_points(struct particle_system* system)
 {
@@ -20,7 +19,7 @@ static void copy_pos_to_points(struct particle_system* system)
 
 bool particle_system_init(struct particle_system* system)
 {
-	const size_t PARTICLES_LENGTH = MAX_PARTICLES * sizeof(float);
+	const size_t PARTICLES_LENGTH = MAX_PARTICLES * sizeof(float) + 16;
 
 	system->pos_x  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
 	system->pos_y  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
@@ -28,6 +27,12 @@ bool particle_system_init(struct particle_system* system)
 	system->vel_y  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
 	system->mass   = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
 	system->points = SDL_calloc(MAX_PARTICLES, sizeof(*system->points));
+
+	memset(system->pos_x, 0, PARTICLES_LENGTH);
+	memset(system->pos_y, 0, PARTICLES_LENGTH);
+	memset(system->vel_x, 0, PARTICLES_LENGTH);
+	memset(system->vel_y, 0, PARTICLES_LENGTH);
+	memset(system->mass, 0, PARTICLES_LENGTH);
 
 	if (system->pos_x  == NULL ||
 		system->pos_y  == NULL ||
@@ -75,6 +80,7 @@ void particle_system_free(struct particle_system* system)
 }
 
 static void move_particles(struct particle_system *system, const float dt) {
+
 	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
 		system->pos_x[i] += dt * system->vel_x[i];
 		system->pos_y[i] += dt * system->vel_y[i];
@@ -236,17 +242,90 @@ static void attract_particles_avx512(struct particle_system *system, const float
 	}
 }
 
+static void calculate_average(struct particle_system* system, float* out_avg_x, float* out_avg_y)
+{
+#if USE_SIMD
+#ifdef __AVX512F__
+	__m512 avg_x_f = _mm512_set1_ps(0.0f);
+	__m512 avg_y_f = _mm512_set1_ps(0.0f);
+	for (size_t i = 0; i < MAX_PARTICLES; i += AVX512_FLOATS) {
+		__m512 pos_x_f = _mm512_load_ps(system->pos_x + i);
+		__m512 pos_y_f = _mm512_load_ps(system->pos_y + i);
+		avg_x_f = _mm512_add_ps(avg_x_f, pos_x_f);
+		avg_y_f = _mm512_add_ps(avg_y_f, pos_y_f);
+	}
+	(*out_avg_x) = _mm512_reduce_add_ps(avg_x_f) / (float)MAX_PARTICLES;
+	(*out_avg_y) = _mm512_reduce_add_ps(avg_y_f) / (float)MAX_PARTICLES;
+#elifdef __AVX2__
+	__m256 avg_x_f = _mm256_set1_ps(0.0f);
+	__m256 avg_y_f = _mm256_set1_ps(0.0f);
+	for (size_t i = 0; i < MAX_PARTICLES; i += AVX2_FLOATS) {
+		__m256 pos_x_f = _mm256_load_ps(system->pos_x + i);
+		__m256 pos_y_f = _mm256_load_ps(system->pos_y + i);
+		avg_x_f = _mm256_add_ps(avg_x_f, pos_x_f);
+		avg_y_f = _mm256_add_ps(avg_y_f, pos_y_f);
+	}
+	(*out_avg_x) = hsum256_ps_avx(avg_x_f) / (float)MAX_PARTICLES;
+	(*out_avg_y) = hsum256_ps_avx(avg_y_f) / (float)MAX_PARTICLES;
+#else
+#error SIMD not supported
+#endif
+#else
+	float avg_x = 0.0f;
+	float avg_y = 0.0f;
+	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
+		avg_x += system->pos_x[i];
+		avg_y += system->pos_y[i];
+	}
+	avg_x /= (float)MAX_PARTICLES;
+	avg_y /= (float)MAX_PARTICLES;
+	(*out_avg_x) = avg_x;
+	(*out_avg_y) = avg_y;
+#endif
+}
+
 static float calculate_standard_distribution(struct particle_system* system)
 {
-	float x_avg = 0.0f;
-	float y_avg = 0.0f;
-	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
-		x_avg += system->pos_x[i];
-		y_avg += system->pos_y[i];
-	}
-	x_avg /= (float)MAX_PARTICLES;
-	y_avg /= (float)MAX_PARTICLES;
+	float x_avg, y_avg;
+	calculate_average(system, &x_avg, &y_avg);
 
+#if USE_SIMD
+#ifdef __AVX512F__
+	__m512 x_dist_f = _mm512_set1_ps(0.0f);
+	__m512 y_dist_f = _mm512_set1_ps(0.0f);
+	__m512 x_avg_f = _mm512_set1_ps(x_avg);
+	__m512 y_avg_f = _mm512_set1_ps(y_avg);
+	for (size_t i = 0; i < MAX_PARTICLES; i += AVX512_FLOATS) {
+		__m512 pos_x_i = _mm512_load_ps(system->pos_x + i);
+		__m512 pos_y_i = _mm512_load_ps(system->pos_y + i);
+		__m512 diff_x = _mm512_sub_ps(pos_x_i, x_avg_f);
+		__m512 diff_y = _mm512_sub_ps(pos_y_i, y_avg_f);
+		x_dist_f = _mm512_add_ps(x_dist_f, _mm512_mul_ps(diff_x, diff_x));
+		y_dist_f = _mm512_add_ps(y_dist_f, _mm512_mul_ps(diff_y, diff_y));
+	}
+	float x_dist = _mm512_reduce_add_ps(x_dist_f) / (float)MAX_PARTICLES;
+	float y_dist = _mm512_reduce_add_ps(y_dist_f) / (float)MAX_PARTICLES;
+	return SDL_sqrtf(x_dist + y_dist);
+#elifdef __AVX2__
+	__m256 x_dist_f = _mm256_set1_ps(0.0f);
+	__m256 y_dist_f = _mm256_set1_ps(0.0f);
+	const __m256 x_avg_f = _mm256_set1_ps(x_avg);
+	const __m256 y_avg_f = _mm256_set1_ps(y_avg);
+	for (size_t i = 0; i < MAX_PARTICLES; i += AVX2_FLOATS) {
+		const __m256 pos_x_i = _mm256_load_ps(system->pos_x + i);
+		const __m256 pos_y_i = _mm256_load_ps(system->pos_y + i);
+		const __m256 diff_x = _mm256_sub_ps(pos_x_i, x_avg_f);
+		const __m256 diff_y = _mm256_sub_ps(pos_y_i, y_avg_f);
+		x_dist_f = _mm256_add_ps(x_dist_f, _mm256_mul_ps(diff_x, diff_x));
+		y_dist_f = _mm256_add_ps(y_dist_f, _mm256_mul_ps(diff_y, diff_y));
+	}
+	float x_dist = hsum256_ps_avx(x_dist_f) / (float)MAX_PARTICLES;
+	float y_dist = hsum256_ps_avx(y_dist_f) / (float)MAX_PARTICLES;
+	return SDL_sqrtf(x_dist + y_dist);
+#else
+#error SIMD not supported
+#endif
+#else
 	float x_dist = 0.0f;
 	float y_dist = 0.0f;
 	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
@@ -256,18 +335,13 @@ static float calculate_standard_distribution(struct particle_system* system)
 	x_dist /= (float)MAX_PARTICLES;
 	y_dist /= (float)MAX_PARTICLES;
 	return SDL_sqrtf(x_dist + y_dist);
+#endif
 }
 
 static void expand_universe(struct particle_system* system, const float amount)
 {
-	float avg_x = 0.0f;
-	float avg_y = 0.0f;
-	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
-		avg_x += system->pos_x[i];
-		avg_y += system->pos_y[i];
-	}
-	avg_x /= (float)MAX_PARTICLES;
-	avg_y /= (float)MAX_PARTICLES;
+	float avg_x, avg_y;
+	calculate_average(system, &avg_x, &avg_y);
 
 	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
 		system->pos_x[i] = amount * (system->pos_x[i] - avg_x);

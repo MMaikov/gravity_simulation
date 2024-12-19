@@ -36,7 +36,9 @@ file(GLOB SOURCES "src/*.c")
 # Automatically gather all .h files from the include directory
 file(GLOB HEADERS "src/*.h")
 
-add_executable(GravitySimulator ${SOURCES} ${HEADERS})
+add_executable(GravitySimulator ${SOURCES} ${HEADERS}
+        src/simd_util.h
+        src/simd_util.c)
 
 # Add the SDL3 include directory, but add an alias for SDL.h
 target_include_directories(GravitySimulator PRIVATE
