@@ -6,8 +6,10 @@
 
 #define SIMD_MEMORY_ALIGNMENT 32
 
+#if USE_SIMD
 #include <immintrin.h>
 #include "simd_util.h"
+#endif
 
 static void copy_pos_to_points(struct particle_system* system)
 {
