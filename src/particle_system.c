@@ -4,7 +4,11 @@
 
 #include "config.h"
 
+#ifdef __AVX512F__
 #define SIMD_MEMORY_ALIGNMENT 64
+#else
+#define SIMD_MEMORY_ALIGNMENT 32
+#endif
 
 #include <immintrin.h>
 #include "simd_util.h"
@@ -95,7 +99,7 @@ static void move_particles(struct particle_system *system, const float dt)
 		pos_y_f = _mm512_fmadd_ps(dt_f, vel_y_f, pos_y_f);
 		_mm512_store_ps(pos_y + i, pos_y_f);
 	}
-#elifdef __AVX2__
+#elif defined __AVX2__
 	const float* vel_x = system->vel_x;
 	const float* vel_y = system->vel_y;
 	float* pos_x = system->pos_x;
@@ -295,7 +299,7 @@ static void calculate_average(struct particle_system* system, float* out_avg_x, 
 	}
 	(*out_avg_x) = _mm512_reduce_add_ps(avg_x_f) / (float)MAX_PARTICLES;
 	(*out_avg_y) = _mm512_reduce_add_ps(avg_y_f) / (float)MAX_PARTICLES;
-#elifdef __AVX2__
+#elif defined __AVX2__
 	__m256 avg_x_f = _mm256_set1_ps(0.0f);
 	__m256 avg_y_f = _mm256_set1_ps(0.0f);
 	for (size_t i = 0; i < MAX_PARTICLES; i += AVX2_FLOATS) {
@@ -349,7 +353,7 @@ static float calculate_standard_distribution(struct particle_system* system)
 	const float x_dist = _mm512_reduce_add_ps(x_dist_f) / (float)MAX_PARTICLES;
 	const float y_dist = _mm512_reduce_add_ps(y_dist_f) / (float)MAX_PARTICLES;
 	return SDL_sqrtf(x_dist + y_dist);
-#elifdef __AVX2__
+#elif defined __AVX2__
 	const float* pos_x = system->pos_x;
 	const float* pos_y = system->pos_y;
 
@@ -407,7 +411,7 @@ static void expand_universe(struct particle_system* system, const float amount)
 		pos_y_f = _mm512_mul_ps(amount_f, _mm512_sub_ps(pos_y_f, avg_y_f));
 		_mm512_store_ps(pos_y + i, pos_y_f);
 	}
-#elifdef __AVX2__
+#elif defined __AVX2__
 	float* pos_x = system->pos_x;
 	float* pos_y = system->pos_y;
 
@@ -451,7 +455,7 @@ bool particle_system_update(struct particle_system* system)
 #if USE_SIMD
 #ifdef __AVX512F__
 	attract_particles_avx512(system, dt);
-#elifdef __AVX2__
+#elif defined __AVX2__
 	attract_particles_avx2(system, dt);
 #else
 #error SIMD not supported
