@@ -56,14 +56,31 @@ int main(const int argc, char** argv)
         const Uint64 start = SDL_GetPerformanceCounter();
         particle_system_update(&particle_system);
         const Uint64 end = SDL_GetPerformanceCounter();
-        const float elapsed = (float)(end - start) / (float)SDL_GetPerformanceFrequency() * 1000.0f * 1000.0f;
+        const float elapsed = (float)(end - start) / (float)SDL_GetPerformanceFrequency();
         sum += elapsed;
         count += 1;
 
-        const float average = sum / (float)count;
-        
+        float average = sum / (float)count;
+
         char buf[40] = {0};
-        SDL_snprintf(buf, 40, "%s - %.1f us", WINDOW_TITLE, average);
+        if (average >= 1.0f) {
+            SDL_snprintf(buf, 40, "%s - %.1f s", WINDOW_TITLE, average);
+        }
+        else {
+            average *= 1000.0f;
+            if (average >= 1.0f) {
+                SDL_snprintf(buf, 40, "%s - %.1f ms", WINDOW_TITLE, average);
+            } else {
+                average *= 1000.0f;
+                if (average >= 1.0f) {
+                    SDL_snprintf(buf, 40, "%s - %.1f us", WINDOW_TITLE, average);
+                } else {
+                    average *= 1000.0f;
+                    SDL_snprintf(buf, 40, "%s - %.1f ns", WINDOW_TITLE, average);
+                }
+            }
+        }
+
 
         if (!SDL_SetWindowTitle(window, buf)) {
             SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to set window title!\n%s\n", SDL_GetError());
