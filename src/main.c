@@ -1,5 +1,4 @@
 #include <SDL.h>
-#include <stdlib.h>
 
 #include "config.h"
 #include "particle_system.h"
