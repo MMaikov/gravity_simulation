@@ -3,8 +3,7 @@
 
 #include "random.h"
 
-#include <stdio.h>
-#include <time.h>
+#include <SDL.h>
 
 uint32_t pcg32_random_r(pcg32_random_t* rng)
 {
@@ -28,6 +27,8 @@ void pcg32_srandom_r(pcg32_random_t* rng, uint64_t initstate, uint64_t initseq)
 
 void pcg32_srandom(pcg32_random_t* rng)
 {
-    pcg32_srandom_r(rng, time(NULL) ^ (intptr_t)&printf,
-      (intptr_t)&puts ^ 0xDEADBEEF);
+    SDL_Time time;
+    SDL_GetCurrentTime(&time);
+    pcg32_srandom_r(rng, time ^ (intptr_t)&SDL_snprintf,
+      (intptr_t)&SDL_CreateCondition ^ 0xDEADBEEF);
 }

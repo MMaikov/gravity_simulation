@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include <stdlib.h>
 
 #include "config.h"
 #include "particle_system.h"
@@ -8,8 +9,17 @@
 
 int main(const int argc, char** argv)
 {
-    (void) argc;
-    (void) argv;
+    uint32_t particle_count = NUM_PARTICLES;
+
+    if (argc > 1) {
+        if (SDL_strncmp("--particles", argv[1], SDL_strlen(argv[1])) == 0) {
+            if (argc > 2) {
+                particle_count = SDL_strtoul(argv[2], NULL, 10);
+            } else {
+                SDL_Log("No particle count specified");
+            }
+        }
+    }
 
     int exitcode = EXIT_SUCCESS;
 
@@ -34,7 +44,7 @@ int main(const int argc, char** argv)
     }
 
     struct particle_system particle_system = { 0 };
-    if (!particle_system_init(&particle_system, NUM_PARTICLES)) {
+    if (!particle_system_init(&particle_system, particle_count)) {
         exitcode = EXIT_FAILURE;
         goto cleanup4;
     }
@@ -103,7 +113,7 @@ int main(const int argc, char** argv)
             goto cleanup5;
         }
 
-        if (!SDL_RenderPoints(renderer, particle_system.points, NUM_PARTICLES)) {
+        if (!SDL_RenderPoints(renderer, particle_system.points, (int)particle_system.num_particles)) {
             SDL_LogCritical(SDL_LOG_CATEGORY_RENDER, "Failed to draw points!\n%s\n", SDL_GetError());
             goto cleanup5;
         }
