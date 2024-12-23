@@ -34,12 +34,13 @@ int main(const int argc, char** argv)
     }
 
     struct particle_system particle_system = { 0 };
-    if (!particle_system_init(&particle_system)) {
+    if (!particle_system_init(&particle_system, NUM_PARTICLES)) {
         exitcode = EXIT_FAILURE;
         goto cleanup4;
     }
 
-    SDL_Log("Initialized particle system with %d particles", MAX_PARTICLES);
+    SDL_Log("Initialized particle system with %d particles", particle_system.num_particles);
+    SDL_Log("Number of threads: %d", SDL_GetNumLogicalCPUCores());
 
     float sum = 0.0f;
     uint32_t count = 0;
@@ -102,7 +103,7 @@ int main(const int argc, char** argv)
             goto cleanup5;
         }
 
-        if (!SDL_RenderPoints(renderer, particle_system.points, MAX_PARTICLES)) {
+        if (!SDL_RenderPoints(renderer, particle_system.points, NUM_PARTICLES)) {
             SDL_LogCritical(SDL_LOG_CATEGORY_RENDER, "Failed to draw points!\n%s\n", SDL_GetError());
             goto cleanup5;
         }

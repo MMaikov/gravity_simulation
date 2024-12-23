@@ -57,9 +57,12 @@ struct particle_system
 	SDL_Semaphore* work_start;
 	SDL_Semaphore* work_done;
 	SDL_AtomicInt exit_flag;
+
+	int num_threads;
+	uint32_t num_particles;
 };
 
-bool particle_system_init(struct particle_system* system);
+bool particle_system_init(struct particle_system* system, uint32_t num_particles);
 void particle_system_free(struct particle_system* system);
 
 bool particle_system_update(struct particle_system* system);

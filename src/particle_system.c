@@ -15,7 +15,7 @@
 
 static void copy_pos_to_points(struct particle_system* system)
 {
-	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
+	for (size_t i = 0; i < system->num_particles; ++i) {
 		system->points[i].x = (system->pos_x[i] + 1.6f) * (WINDOW_HEIGHT / 2.0f);
 		system->points[i].y = (system->pos_y[i] + 1.0f) * (WINDOW_HEIGHT / 2.0f);
 	}
@@ -73,18 +73,21 @@ static int thread_func(void* data)
 	return 0;
 }
 
-bool particle_system_init(struct particle_system* system)
+bool particle_system_init(struct particle_system* system, uint32_t num_particles)
 {
-	const size_t PARTICLES_LENGTH = (MAX_PARTICLES+16) * sizeof(float);
+	system->num_particles = num_particles;
+
+	const size_t PARTICLES_LENGTH = (system->num_particles + AVX512_FLOATS) * sizeof(float);
 	system->pos_x  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
 	system->pos_y  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
 	system->vel_x  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
 	system->vel_y  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
 	system->mass   = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
-	system->points = SDL_calloc(MAX_PARTICLES, sizeof(*system->points));
+	system->points = SDL_calloc(system->num_particles, sizeof(*system->points));
 
 #if USE_MULTITHREADING
-	for (size_t i = 0; i < MAX_THREADS; ++i) {
+	system->num_threads = SDL_min(SDL_GetNumLogicalCPUCores(), MAX_THREADS);
+	for (size_t i = 0; i < system->num_threads; ++i) {
 		float** vel_x = system->buffer.vel_x + i;
 		float** vel_y = system->buffer.vel_y + i;
 
@@ -105,9 +108,9 @@ bool particle_system_init(struct particle_system* system)
 	}
 
 	pcg32_srandom(&system->rng);
-	const float rotation = 0.1f * SDL_powf(MAX_PARTICLES, 0.666f);
+	const float rotation = 0.1f * SDL_powf((float)system->num_particles, 0.666f);
 
-	for (size_t i = 0; i < MAX_PARTICLES+16; ++i) {
+	for (size_t i = 0; i < system->num_particles+16; ++i) {
 		const float pos_x = (float)pcg32_random_r(&system->rng) / (float)SDL_MAX_UINT32;
 		const float pos_y = (float)pcg32_random_r(&system->rng) / (float)SDL_MAX_UINT32;
 		float vel_x = pos_y*rotation;
@@ -124,7 +127,7 @@ bool particle_system_init(struct particle_system* system)
 		system->mass[i] = mass;
 
 #if USE_MULTITHREADING
-		for (size_t j = 0; j < MAX_THREADS; ++j) {
+		for (size_t j = 0; j < system->num_threads; ++j) {
 			system->buffer.vel_x[j][i] = 0.0f;
 			system->buffer.vel_y[j][i] = 0.0f;
 		}
@@ -136,11 +139,11 @@ bool particle_system_init(struct particle_system* system)
 #if defined(__AVX512F__) && USE_AVX512
 	size_t it = 0;
 
-	const int use_particles = AVX512_FLOATS*(MAX_PARTICLES/AVX512_FLOATS);
+	const int use_particles = AVX512_FLOATS*(system->num_particles/AVX512_FLOATS);
 	system->pairs_simd_length = (use_particles - AVX512_FLOATS) * (use_particles / AVX512_FLOATS + 1);
 	system->pairs_simd = SDL_calloc(system->pairs_simd_length, sizeof(*system->pairs_simd));
 
-	system->pairs_length = AVX512_FLOATS*MAX_PARTICLES;
+	system->pairs_length = AVX512_FLOATS*system->num_particles;
 	system->pairs      = SDL_calloc(system->pairs_length, sizeof(*system->pairs));
 
 	for (size_t hop = AVX512_FLOATS; hop < use_particles; ++hop) {
@@ -156,9 +159,9 @@ bool particle_system_init(struct particle_system* system)
 	it = 0;
 
 	for (size_t k = 0; k < AVX512_FLOATS; ++k) {
-		for (size_t n = 0; n < MAX_PARTICLES; ++n) {
+		for (size_t n = 0; n < system->num_particles; ++n) {
 			const size_t i = n;
-			const size_t j = (n + k) % MAX_PARTICLES;
+			const size_t j = (n + k) % system->num_particles;
 
 			const struct particle_pair pair = {.i = i, .j = j};
 			system->pairs[it++] = pair;
@@ -168,11 +171,11 @@ bool particle_system_init(struct particle_system* system)
 
 	size_t it = 0;
 
-	const int use_particles = AVX2_FLOATS*(MAX_PARTICLES/AVX2_FLOATS);
+	const int use_particles = AVX2_FLOATS*(system->num_particles/AVX2_FLOATS);
 	system->pairs_simd_length = (use_particles - AVX2_FLOATS) * (use_particles / AVX2_FLOATS + 1);
 	system->pairs_simd = SDL_calloc(system->pairs_simd_length, sizeof(*system->pairs_simd));
 
-	system->pairs_length = AVX2_FLOATS*MAX_PARTICLES;
+	system->pairs_length = AVX2_FLOATS*system->num_particles;
 	system->pairs      = SDL_calloc(system->pairs_length, sizeof(*system->pairs));
 
 	for (size_t hop = AVX2_FLOATS; hop < use_particles; ++hop) {
@@ -188,9 +191,9 @@ bool particle_system_init(struct particle_system* system)
 	it = 0;
 
 	for (size_t k = 0; k < AVX2_FLOATS; ++k) {
-		for (size_t n = 0; n < MAX_PARTICLES; ++n) {
+		for (size_t n = 0; n < system->num_particles; ++n) {
 			const size_t i = n;
-			const size_t j = (n + k) % MAX_PARTICLES;
+			const size_t j = (n + k) % system->num_particles;
 
 			const struct particle_pair pair = {.i = i, .j = j};
 			system->pairs[it++] = pair;
@@ -202,12 +205,12 @@ bool particle_system_init(struct particle_system* system)
 #endif
 #else
 
-	system->pairs_length = combination(MAX_PARTICLES, 2);
+	system->pairs_length = combination(system->num_particles, 2);
 	system->pairs      = SDL_calloc(system->pairs_length, sizeof(*system->pairs));
 
 	size_t it = 0;
-	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
-		for (size_t j = i+1; j < MAX_PARTICLES; ++j) {
+	for (size_t i = 0; i < system->num_particles; ++i) {
+		for (size_t j = i+1; j < system->num_particles; ++j) {
 			const struct particle_pair pair = {.i = i, .j = j};
 			system->pairs[it++] = pair;
 		}
@@ -225,25 +228,25 @@ bool particle_system_init(struct particle_system* system)
 	SDL_SetAtomicInt(&system->exit_flag, 0);
 
 	size_t st = 0;
-	size_t nd = system->pairs_length/MAX_THREADS;
+	size_t nd = system->pairs_length/system->num_threads;
 #if USE_SIMD
 	size_t st2 = 0;
-	size_t nd2 = system->pairs_simd_length/MAX_THREADS;
+	size_t nd2 = system->pairs_simd_length/system->num_threads;
 #endif
-	for (size_t i = 0; i < MAX_THREADS; ++i) {
+	for (size_t i = 0; i < system->num_threads; ++i) {
 #if USE_SIMD
 		const struct thread_data data = {.system = system, .dt = 1e-6f, .thread_id = i, .simd_start = st2, .simd_end = nd2,
 			.start = st, .end = nd, .work_start = system->work_start,
 			.work_done = system->work_done, .exit_flag = &system->exit_flag};
-		st += system->pairs_length/MAX_THREADS;
-		nd += system->pairs_length/MAX_THREADS;
-		st2 += system->pairs_simd_length/MAX_THREADS;
-		nd2 += system->pairs_simd_length/MAX_THREADS;
+		st += system->pairs_length/system->num_threads;
+		nd += system->pairs_length/system->num_threads;
+		st2 += system->pairs_simd_length/system->num_threads;
+		nd2 += system->pairs_simd_length/system->num_threads;
 #else
 		const struct thread_data data = {.system = system, .dt = 1e-6f, .thread_id = i, .start = st, .end = nd,
 			.work_start = system->work_start, .work_done = system->work_done, .exit_flag = &system->exit_flag};
-		st += system->pairs_length/MAX_THREADS;
-		nd += system->pairs_length/MAX_THREADS;
+		st += system->pairs_length/system->num_threads;
+		nd += system->pairs_length/system->num_threads;
 #endif
 
 		system->thread_data[i] = data;
@@ -266,7 +269,7 @@ void particle_system_free(struct particle_system* system)
 	SDL_aligned_free(system->mass );
 
 #if USE_MULTITHREADING
-	for (size_t i = 0; i < MAX_THREADS; ++i) {
+	for (size_t i = 0; i < system->num_threads; ++i) {
 		SDL_aligned_free(system->buffer.vel_x[i]);
 		SDL_aligned_free(system->buffer.vel_y[i]);
 	}
@@ -279,11 +282,11 @@ void particle_system_free(struct particle_system* system)
 	SDL_SetAtomicInt(&system->exit_flag, 1);
 
 	// Wake up any threads waiting on work_start
-	for (int i = 0; i < MAX_THREADS; i++) {
+	for (int i = 0; i < system->num_threads; i++) {
 		SDL_SignalSemaphore(system->work_start);
 	}
 
-	for (size_t i = 0; i < MAX_THREADS; ++i) {
+	for (size_t i = 0; i < system->num_threads; ++i) {
 		SDL_WaitThread(system->threads[i], NULL);
 	}
 
@@ -302,7 +305,7 @@ static void move_particles(struct particle_system *system, const float dt)
 	float* pos_y = system->pos_y;
 
 	const __m512 dt_f = _mm512_set1_ps(dt);
-	for (size_t i = 0; i < MAX_PARTICLES; i += AVX512_FLOATS) {
+	for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
 		const __m512 vel_x_f = _mm512_load_ps(vel_x + i);
 		__m512 pos_x_f = _mm512_load_ps(pos_x + i);
 		pos_x_f = _mm512_fmadd_ps(dt_f, vel_x_f, pos_x_f);
@@ -320,7 +323,7 @@ static void move_particles(struct particle_system *system, const float dt)
 	float* pos_y = system->pos_y;
 
 	const __m256 dt_f = _mm256_set1_ps(dt);
-	for (size_t i = 0; i < MAX_PARTICLES; i += AVX2_FLOATS) {
+	for (size_t i = 0; i < system->num_particles; i += AVX2_FLOATS) {
 		const __m256 vel_x_f = _mm256_load_ps(vel_x + i);
 		__m256 pos_x_f = _mm256_load_ps(pos_x + i);
 		pos_x_f = _mm256_fmadd_ps(dt_f, vel_x_f, pos_x_f);
@@ -335,7 +338,7 @@ static void move_particles(struct particle_system *system, const float dt)
 #error SIMD not supported
 #endif
 #else
-	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
+	for (size_t i = 0; i < system->num_particles; ++i) {
 		system->pos_x[i] += dt * system->vel_x[i];
 		system->pos_y[i] += dt * system->vel_y[i];
 	}
@@ -345,8 +348,8 @@ static void move_particles(struct particle_system *system, const float dt)
 
 static void attract_particles(struct particle_system *system, const float dt) {
 	const float min_dist = 8*dt;
-	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
-		for (size_t j = i+1; j < MAX_PARTICLES; ++j) {
+	for (size_t i = 0; i < system->num_particles; ++i) {
+		for (size_t j = i+1; j < system->num_particles; ++j) {
 			const float pos_x_diff = system->pos_x[i] - system->pos_x[j];
 			const float pos_y_diff = system->pos_y[i] - system->pos_y[j];
 			const float distance_squared = pos_x_diff * pos_x_diff + pos_y_diff * pos_y_diff;
@@ -400,7 +403,7 @@ static void attract_particles_avx2(struct particle_system *system, const float d
 	const __m256 min_inv_dist_f = _mm256_set1_ps(1.0f / min_dist);
 	const __m256 dt_f = _mm256_set1_ps(dt);
 
-	const int use_particles = AVX2_FLOATS*(MAX_PARTICLES/AVX2_FLOATS);
+	const int use_particles = AVX2_FLOATS*(system->num_particles/AVX2_FLOATS);
 
 	const float* pos_x = system->pos_x;
 	const float* pos_y = system->pos_y;
@@ -448,9 +451,9 @@ static void attract_particles_avx2(struct particle_system *system, const float d
 	}
 
 	for (size_t k = 0; k < AVX2_FLOATS; ++k) {
-		for (size_t n = 0; n < MAX_PARTICLES; ++n) {
+		for (size_t n = 0; n < system->num_particles; ++n) {
 			const size_t i = n;
-			const size_t j = (n + k) % MAX_PARTICLES;
+			const size_t j = (n + k) % system->num_particles;
 			const float pos_x_diff = pos_x[i] - pos_x[j];
 			const float pos_y_diff = pos_y[i] - pos_y[j];
 			const float distance_squared = pos_x_diff * pos_x_diff + pos_y_diff * pos_y_diff;
@@ -545,7 +548,7 @@ static void attract_particles_avx512(struct particle_system *system, const float
 	const __m512 min_inv_dist_f = _mm512_set1_ps(1.0f / min_dist);
 	const __m512 dt_f = _mm512_set1_ps(dt);
 
-	const int use_particles = AVX512_FLOATS*(MAX_PARTICLES/AVX512_FLOATS);
+	const int use_particles = AVX512_FLOATS*(system->num_particles/AVX512_FLOATS);
 
 	const float* pos_x = system->pos_x;
 	const float* pos_y = system->pos_y;
@@ -593,9 +596,9 @@ static void attract_particles_avx512(struct particle_system *system, const float
 	}
 
 	for (size_t k = 0; k < AVX512_FLOATS; ++k) {
-		for (size_t n = 0; n < MAX_PARTICLES; ++n) {
+		for (size_t n = 0; n < system->num_particles; ++n) {
 			const size_t i = n;
-			const size_t j = (n + k) % MAX_PARTICLES;
+			const size_t j = (n + k) % system->num_particles;
 			const float pos_x_diff = pos_x[i] - pos_x[j];
 			const float pos_y_diff = pos_y[i] - pos_y[j];
 			const float distance_squared = pos_x_diff * pos_x_diff + pos_y_diff * pos_y_diff;
@@ -692,42 +695,42 @@ static void calculate_average(struct particle_system* system, float* out_avg_x, 
 
 	__m512 avg_x_f = _mm512_set1_ps(0.0f);
 	__m512 avg_y_f = _mm512_set1_ps(0.0f);
-	for (size_t i = 0; i < MAX_PARTICLES; i += AVX512_FLOATS) {
+	for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
 		__m512 pos_x_f = _mm512_load_ps(pos_x + i);
 		avg_x_f = _mm512_add_ps(avg_x_f, pos_x_f);
 
 		__m512 pos_y_f = _mm512_load_ps(pos_y + i);
 		avg_y_f = _mm512_add_ps(avg_y_f, pos_y_f);
 	}
-	(*out_avg_x) = _mm512_reduce_add_ps(avg_x_f) / (float)MAX_PARTICLES;
-	(*out_avg_y) = _mm512_reduce_add_ps(avg_y_f) / (float)MAX_PARTICLES;
+	(*out_avg_x) = _mm512_reduce_add_ps(avg_x_f) / (float)system->num_particles;
+	(*out_avg_y) = _mm512_reduce_add_ps(avg_y_f) / (float)system->num_particles;
 #elif defined(__AVX2__)
 	const float* pos_x = system->pos_x;
 	const float* pos_y = system->pos_y;
 
 	__m256 avg_x_f = _mm256_set1_ps(0.0f);
 	__m256 avg_y_f = _mm256_set1_ps(0.0f);
-	for (size_t i = 0; i < MAX_PARTICLES; i += AVX2_FLOATS) {
+	for (size_t i = 0; i < system->num_particles; i += AVX2_FLOATS) {
 		__m256 pos_x_f = _mm256_load_ps(pos_x + i);
 		avg_x_f = _mm256_add_ps(avg_x_f, pos_x_f);
 
 		__m256 pos_y_f = _mm256_load_ps(pos_y + i);
 		avg_y_f = _mm256_add_ps(avg_y_f, pos_y_f);
 	}
-	(*out_avg_x) = hsum256_ps_avx(avg_x_f) / (float)MAX_PARTICLES;
-	(*out_avg_y) = hsum256_ps_avx(avg_y_f) / (float)MAX_PARTICLES;
+	(*out_avg_x) = hsum256_ps_avx(avg_x_f) / (float)system->num_particles;
+	(*out_avg_y) = hsum256_ps_avx(avg_y_f) / (float)system->num_particles;
 #else
 #error SIMD not supported
 #endif
 #else
 	float avg_x = 0.0f;
 	float avg_y = 0.0f;
-	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
+	for (size_t i = 0; i < system->num_particles; ++i) {
 		avg_x += system->pos_x[i];
 		avg_y += system->pos_y[i];
 	}
-	avg_x /= (float)MAX_PARTICLES;
-	avg_y /= (float)MAX_PARTICLES;
+	avg_x /= (float)system->num_particles;
+	avg_y /= (float)system->num_particles;
 	(*out_avg_x) = avg_x;
 	(*out_avg_y) = avg_y;
 #endif
@@ -747,7 +750,7 @@ static float calculate_standard_distribution(struct particle_system* system)
 	__m512 y_dist_f = _mm512_set1_ps(0.0f);
 	const __m512 x_avg_f = _mm512_set1_ps(x_avg);
 	const __m512 y_avg_f = _mm512_set1_ps(y_avg);
-	for (size_t i = 0; i < MAX_PARTICLES; i += AVX512_FLOATS) {
+	for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
 		const __m512 pos_x_f = _mm512_load_ps(pos_x + i);
 		const __m512 diff_x = _mm512_sub_ps(pos_x_f, x_avg_f);
 		x_dist_f = _mm512_fmadd_ps(diff_x, diff_x, x_dist_f);
@@ -756,8 +759,8 @@ static float calculate_standard_distribution(struct particle_system* system)
 		const __m512 diff_y = _mm512_sub_ps(pos_y_f, y_avg_f);
 		y_dist_f = _mm512_fmadd_ps(diff_y, diff_y, y_dist_f);
 	}
-	const float x_dist = _mm512_reduce_add_ps(x_dist_f) / (float)MAX_PARTICLES;
-	const float y_dist = _mm512_reduce_add_ps(y_dist_f) / (float)MAX_PARTICLES;
+	const float x_dist = _mm512_reduce_add_ps(x_dist_f) / (float)system->num_particles;
+	const float y_dist = _mm512_reduce_add_ps(y_dist_f) / (float)system->num_particles;
 	return SDL_sqrtf(x_dist + y_dist);
 #elif defined(__AVX2__)
 	const float* pos_x = system->pos_x;
@@ -767,7 +770,7 @@ static float calculate_standard_distribution(struct particle_system* system)
 	__m256 y_dist_f = _mm256_set1_ps(0.0f);
 	const __m256 x_avg_f = _mm256_set1_ps(x_avg);
 	const __m256 y_avg_f = _mm256_set1_ps(y_avg);
-	for (size_t i = 0; i < MAX_PARTICLES; i += AVX2_FLOATS) {
+	for (size_t i = 0; i < system->num_particles; i += AVX2_FLOATS) {
 		const __m256 pos_x_f = _mm256_load_ps(pos_x + i);
 		const __m256 diff_x = _mm256_sub_ps(pos_x_f, x_avg_f);
 		x_dist_f = _mm256_fmadd_ps(diff_x, diff_x, x_dist_f);
@@ -776,8 +779,8 @@ static float calculate_standard_distribution(struct particle_system* system)
 		const __m256 diff_y = _mm256_sub_ps(pos_y_f, y_avg_f);
 		y_dist_f = _mm256_fmadd_ps(diff_y, diff_y, y_dist_f);
 	}
-	const float x_dist = hsum256_ps_avx(x_dist_f) / (float)MAX_PARTICLES;
-	const float y_dist = hsum256_ps_avx(y_dist_f) / (float)MAX_PARTICLES;
+	const float x_dist = hsum256_ps_avx(x_dist_f) / (float)system->num_particles;
+	const float y_dist = hsum256_ps_avx(y_dist_f) / (float)system->num_particles;
 	return SDL_sqrtf(x_dist + y_dist);
 #else
 #error SIMD not supported
@@ -785,12 +788,12 @@ static float calculate_standard_distribution(struct particle_system* system)
 #else
 	float x_dist = 0.0f;
 	float y_dist = 0.0f;
-	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
+	for (size_t i = 0; i < system->num_particles; ++i) {
 		x_dist += (system->pos_x[i] - x_avg)*(system->pos_x[i] - x_avg);
 		y_dist += (system->pos_y[i] - y_avg)*(system->pos_y[i] - y_avg);
 	}
-	x_dist /= (float)MAX_PARTICLES;
-	y_dist /= (float)MAX_PARTICLES;
+	x_dist /= (float)system->num_particles;
+	y_dist /= (float)system->num_particles;
 	return SDL_sqrtf(x_dist + y_dist);
 #endif
 }
@@ -808,7 +811,7 @@ static void expand_universe(struct particle_system* system, const float amount)
 	const __m512 amount_f = _mm512_set1_ps(amount);
 	const __m512 avg_x_f = _mm512_set1_ps(avg_x);
 	const __m512 avg_y_f = _mm512_set1_ps(avg_y);
-	for (size_t i = 0; i < MAX_PARTICLES; i += AVX512_FLOATS) {
+	for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
 		__m512 pos_x_f = _mm512_load_ps(pos_x + i);
 		pos_x_f = _mm512_mul_ps(amount_f, _mm512_sub_ps(pos_x_f, avg_x_f));
 		_mm512_store_ps(pos_x + i, pos_x_f);
@@ -824,7 +827,7 @@ static void expand_universe(struct particle_system* system, const float amount)
 	const __m256 amount_f = _mm256_set1_ps(amount);
 	const __m256 avg_x_f = _mm256_set1_ps(avg_x);
 	const __m256 avg_y_f = _mm256_set1_ps(avg_y);
-	for (size_t i = 0; i < MAX_PARTICLES; i += AVX2_FLOATS) {
+	for (size_t i = 0; i < system->num_particles; i += AVX2_FLOATS) {
 		__m256 pos_x_f = _mm256_load_ps(pos_x + i);
 		pos_x_f = _mm256_mul_ps(amount_f, _mm256_sub_ps(pos_x_f, avg_x_f));
 		_mm256_store_ps(pos_x + i, pos_x_f);
@@ -838,7 +841,7 @@ static void expand_universe(struct particle_system* system, const float amount)
 #endif
 
 #else
-	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
+	for (size_t i = 0; i < system->num_particles; ++i) {
 		system->pos_x[i] = amount * (system->pos_x[i] - avg_x);
 		system->pos_y[i] = amount * (system->pos_y[i] - avg_y);
 	}
@@ -852,8 +855,8 @@ bool particle_system_update(struct particle_system* system)
 	const float amount = 0.7f / calculate_standard_distribution(system);
 	expand_universe(system, amount);
 
-	const float rotation = 0.001f * SDL_powf(MAX_PARTICLES, 0.666f);
-	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
+	const float rotation = 0.001f * SDL_powf((float)system->num_particles, 0.666f);
+	for (size_t i = 0; i < system->num_particles; ++i) {
 		system->vel_x[i] += system->pos_y[i]*rotation + ((float)pcg32_random_r(&system->rng) / (float)SDL_MAX_UINT32 * 2.0f - 1.0f);
 		system->vel_y[i] += -system->pos_x[i]*rotation + ((float)pcg32_random_r(&system->rng) / (float)SDL_MAX_UINT32 * 2.0f - 1.0f);
 	}
@@ -869,12 +872,12 @@ bool particle_system_update(struct particle_system* system)
 #else
 #if USE_MULTITHREADING
 	// Signal all threads to start work
-	for (int i = 0; i < MAX_THREADS; i++) {
+	for (int i = 0; i < system->num_threads; i++) {
 		SDL_SignalSemaphore(system->work_start);
 	}
 
 	// Wait for all threads to finish
-	for (int i = 0; i < MAX_THREADS; i++) {
+	for (int i = 0; i < system->num_threads; i++) {
 		SDL_WaitSemaphore(system->work_done);
 	}
 #else
@@ -884,8 +887,8 @@ bool particle_system_update(struct particle_system* system)
 #endif
 
 #if USE_MULTITHREADING
-	for (size_t i = 0; i < MAX_PARTICLES; ++i) {
-		for (size_t thread = 0; thread < MAX_THREADS; ++thread) {
+	for (size_t i = 0; i < system->num_particles; ++i) {
+		for (size_t thread = 0; thread < system->num_threads; ++thread) {
 			system->vel_x[i] += system->buffer.vel_x[thread][i];
 			system->vel_y[i] += system->buffer.vel_y[thread][i];
 			system->buffer.vel_x[thread][i] = 0.0f;
