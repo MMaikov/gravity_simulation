@@ -73,7 +73,7 @@ static int thread_func(void* data)
 	return 0;
 }
 
-bool particle_system_init(struct particle_system* system, uint32_t num_particles)
+static bool allocate_memory(struct particle_system* system, const uint32_t num_particles)
 {
 	system->num_particles = num_particles;
 
@@ -85,6 +85,16 @@ bool particle_system_init(struct particle_system* system, uint32_t num_particles
 	system->mass   = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
 	system->points = SDL_calloc(system->num_particles, sizeof(*system->points));
 
+	if (system->pos_x  == NULL ||
+		system->pos_y  == NULL ||
+		system->vel_x  == NULL ||
+		system->vel_y  == NULL ||
+		system->mass   == NULL ||
+		system->points == NULL)
+	{
+		return false;
+	}
+
 #if USE_MULTITHREADING
 	system->num_threads = SDL_min(SDL_GetNumLogicalCPUCores(), MAX_THREADS);
 	for (size_t i = 0; i < system->num_threads; ++i) {
@@ -93,21 +103,17 @@ bool particle_system_init(struct particle_system* system, uint32_t num_particles
 
 		(*vel_x)  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
 		(*vel_y)  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
+		if ((*vel_x) == NULL || (*vel_y) == NULL) {
+			return false;
+		}
 	}
 #endif
 
-	if (system->pos_x  == NULL ||
-		system->pos_y  == NULL ||
-		system->vel_x  == NULL ||
-		system->vel_y  == NULL ||
-		system->mass   == NULL ||
-		system->points == NULL)
-	{
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to allocate memory!\n");
-		return false;
-	}
+	return true;
+}
 
-	pcg32_srandom(&system->rng);
+static void initialize_particles(struct particle_system* system)
+{
 	const float rotation = 0.1f * SDL_powf((float)system->num_particles, 0.666f);
 
 	for (size_t i = 0; i < system->num_particles+16; ++i) {
@@ -127,13 +133,16 @@ bool particle_system_init(struct particle_system* system, uint32_t num_particles
 		system->mass[i] = mass;
 
 #if USE_MULTITHREADING
-		for (size_t j = 0; j < system->num_threads; ++j) {
-			system->buffer.vel_x[j][i] = 0.0f;
-			system->buffer.vel_y[j][i] = 0.0f;
+		for (size_t thread = 0; thread < system->num_threads; ++thread) {
+			system->buffer.vel_x[thread][i] = 0.0f;
+			system->buffer.vel_y[thread][i] = 0.0f;
 		}
 #endif
 	}
+}
 
+static bool generate_particle_pairs(struct particle_system* system)
+{
 #if USE_MULTITHREADING
 #if USE_SIMD
 #if defined(__AVX512F__) && USE_AVX512
@@ -145,6 +154,11 @@ bool particle_system_init(struct particle_system* system, uint32_t num_particles
 
 	system->pairs_length = AVX512_FLOATS*system->num_particles;
 	system->pairs      = SDL_calloc(system->pairs_length, sizeof(*system->pairs));
+
+	if (system->pairs_simd == NULL || system->pairs == NULL) {
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to allocate memory!\n");
+		return false;
+	}
 
 	for (size_t hop = AVX512_FLOATS; hop < use_particles; ++hop) {
 		for (size_t n = 0; n < use_particles/AVX512_FLOATS+1; ++n) {
@@ -178,6 +192,11 @@ bool particle_system_init(struct particle_system* system, uint32_t num_particles
 	system->pairs_length = AVX2_FLOATS*system->num_particles;
 	system->pairs      = SDL_calloc(system->pairs_length, sizeof(*system->pairs));
 
+	if (system->pairs_simd == NULL || system->pairs == NULL) {
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to allocate memory!\n");
+		return false;
+	}
+
 	for (size_t hop = AVX2_FLOATS; hop < use_particles; ++hop) {
 		for (size_t n = 0; n < use_particles/AVX2_FLOATS+1; ++n) {
 			const size_t i = n*AVX2_FLOATS;
@@ -208,6 +227,14 @@ bool particle_system_init(struct particle_system* system, uint32_t num_particles
 	system->pairs_length = combination(system->num_particles, 2);
 	system->pairs      = SDL_calloc(system->pairs_length, sizeof(*system->pairs));
 
+	system->pairs_simd = NULL;
+	system->pairs_simd_length = 0;
+
+	if (system->pairs == NULL) {
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to allocate memory!\n");
+		return false;
+	}
+
 	size_t it = 0;
 	for (size_t i = 0; i < system->num_particles; ++i) {
 		for (size_t j = i+1; j < system->num_particles; ++j) {
@@ -218,11 +245,20 @@ bool particle_system_init(struct particle_system* system, uint32_t num_particles
 #endif
 #endif
 
-	copy_pos_to_points(system);
+	return true;
+}
+
+static bool initialize_threads(struct particle_system* system)
+{
 
 #if USE_MULTITHREADING
 	system->work_start = SDL_CreateSemaphore(0);
 	system->work_done = SDL_CreateSemaphore(0);
+
+	if (system->work_start == NULL || system->work_done == NULL) {
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL semaphores!\n%s", SDL_GetError());
+		return false;
+	}
 
 	// Allow threads to start
 	SDL_SetAtomicInt(&system->exit_flag, 0);
@@ -244,7 +280,8 @@ bool particle_system_init(struct particle_system* system, uint32_t num_particles
 		nd2 += system->pairs_simd_length/system->num_threads;
 #else
 		const struct thread_data data = {.system = system, .dt = 1e-6f, .thread_id = i, .start = st, .end = nd,
-			.work_start = system->work_start, .work_done = system->work_done, .exit_flag = &system->exit_flag};
+			.simd_start = 0, .simd_end = 0, .work_start = system->work_start,
+			.work_done = system->work_done, .exit_flag = &system->exit_flag};
 		st += system->pairs_length/system->num_threads;
 		nd += system->pairs_length/system->num_threads;
 #endif
@@ -252,10 +289,34 @@ bool particle_system_init(struct particle_system* system, uint32_t num_particles
 		system->thread_data[i] = data;
 		system->threads[i] = SDL_CreateThread(thread_func, "ParticleWorker", system->thread_data + i);
 		if (system->threads[i] == NULL) {
-			SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to create thread!\n");
+			SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to create a SDL thread!\n%s", SDL_GetError());
 		}
 	}
 #endif
+
+	return true;
+}
+
+bool particle_system_init(struct particle_system* system, const uint32_t num_particles)
+{
+	if (!allocate_memory(system, num_particles)) {
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to allocate memory!\n");
+		return false;
+	}
+
+	pcg32_srandom(&system->rng);
+
+	initialize_particles(system);
+
+	copy_pos_to_points(system);
+
+	if (!generate_particle_pairs(system)) {
+		return false;
+	}
+
+	if (!initialize_threads(system)) {
+		return false;
+	}
 
 	return true;
 }
@@ -273,7 +334,9 @@ void particle_system_free(struct particle_system* system)
 		SDL_aligned_free(system->buffer.vel_x[i]);
 		SDL_aligned_free(system->buffer.vel_y[i]);
 	}
+
 	SDL_free(system->pairs);
+	SDL_free(system->pairs_simd);
 #endif
 
 	SDL_free(system->points);
