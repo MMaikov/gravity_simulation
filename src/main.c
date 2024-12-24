@@ -49,7 +49,7 @@ int main(const int argc, char** argv)
     }
 
     SDL_Log("Initialized particle system with %d particles", particle_system.num_particles);
-    SDL_Log("Number of threads: %d", SDL_GetNumLogicalCPUCores());
+    SDL_Log("Number of threads: %d", particle_system.num_threads);
 
     float sum = 0.0f;
     uint32_t count = 0;

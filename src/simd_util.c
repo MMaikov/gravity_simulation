@@ -17,3 +17,12 @@ float hsum256_ps_avx(__m256 v) {
     return hsum_ps_sse3(vlow);         // and inline the sse3 version, which is optimal for AVX
     // (no wasted instructions, and all of them are the 4B minimum)
 }
+
+// Inspired by the stackoverflow answer above
+float hsum_ps_sse(__m128 v) {
+    __m128 shuf = _mm_shuffle_ps(v, v, _MM_SHUFFLE(3, 1, 2, 0)); // Shuffle elements 3,1 to 2,0
+    __m128 sums = _mm_add_ps(v, shuf);
+    shuf        = _mm_movehl_ps(shuf, sums); // high half -> low half
+    sums        = _mm_add_ss(sums, shuf);
+    return        _mm_cvtss_f32(sums);
+}
