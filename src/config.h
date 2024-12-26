@@ -19,3 +19,6 @@
 #define MAX_THREADS 256
 
 #define USE_MULTITHREADING 1
+
+// from Google's Chromium project
+#define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x]))))) //NOLINT
