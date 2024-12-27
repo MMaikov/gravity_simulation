@@ -11,6 +11,11 @@ void timer_stop(struct timer* timer) {
     timer->count += 1;
 }
 
+void timer_reset(struct timer* timer) {
+    timer->sum = 0;
+    timer->count = 0;
+}
+
 double timer_get_elapsed(struct timer* timer) {
     return (double)timer->sum / (double)timer->count / (double)SDL_GetPerformanceFrequency();
 }

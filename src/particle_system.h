@@ -65,4 +65,6 @@ struct particle_system
 bool particle_system_init(struct particle_system* system, uint32_t num_particles);
 void particle_system_free(struct particle_system* system);
 
+void particle_system_reset(struct particle_system* system);
+
 void particle_system_update(struct particle_system* system, float dt, uint32_t num_updates);

@@ -114,6 +114,11 @@ int main(const int argc, char** argv)
                     case SDLK_DOWN:
                         view_pos_y += WINDOW_HEIGHT / view_scale * 0.01f;
                         break;
+                    case SDLK_R:
+                        particle_system_reset(&particle_system);
+                        timer_reset(&update_timer);
+                        simulate = false;
+                        break;
                     case SDLK_O:
                         view_scale *= 0.98f;
                         break;
@@ -145,11 +150,13 @@ int main(const int argc, char** argv)
             }
         }
 
-        timer_start(&update_timer);
         if (simulate) {
+            timer_start(&update_timer);
             particle_system_update(&particle_system, dt, num_updates);
+            timer_stop(&update_timer);
+        } else {
+            timer_reset(&update_timer);
         }
-        timer_stop(&update_timer);
 
         timer_start(&render_timer);
 

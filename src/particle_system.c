@@ -113,7 +113,7 @@ static bool allocate_memory(struct particle_system* system, const uint32_t num_p
 
 static void initialize_particles(struct particle_system* system)
 {
-	const float rotation = 0.1f * SDL_powf((float)system->num_particles, 0.666f);
+	const float rotation = 10.0f * SDL_powf((float)system->num_particles, 0.666f);
 
 	for (size_t i = 0; i < system->num_particles+16; ++i) {
 		const float pos_x = (float)pcg32_random_r(&system->rng) / (float)SDL_MAX_UINT32;
@@ -352,6 +352,10 @@ bool particle_system_init(struct particle_system* system, const uint32_t num_par
 	}
 
 	return true;
+}
+
+void particle_system_reset(struct particle_system* system) {
+	initialize_particles(system);
 }
 
 void particle_system_free(struct particle_system* system)
@@ -1250,11 +1254,13 @@ void particle_system_update(struct particle_system* system, float dt, uint32_t n
 	const float amount = 0.7f / calculate_standard_distribution(system);
 	expand_universe(system, amount);
 
+#if PARTICLE_SYSTEM_ADD_RANDOM_FORCE
 	const float rotation = 0.001f * SDL_powf((float)system->num_particles, 0.666f);
 	for (size_t i = 0; i < system->num_particles; ++i) {
 		system->vel_x[i] += system->pos_y[i]*rotation + ((float)pcg32_random_r(&system->rng) / (float)SDL_MAX_UINT32 * 2.0f - 1.0f);
 		system->vel_y[i] += -system->pos_x[i]*rotation + ((float)pcg32_random_r(&system->rng) / (float)SDL_MAX_UINT32 * 2.0f - 1.0f);
 	}
+#endif
 
 #if USE_SIMD && !USE_MULTITHREADING
 #if defined(__AVX512F__) && USE_AVX512
