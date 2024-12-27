@@ -40,10 +40,10 @@ static uint64_t combination(uint64_t n, uint64_t r)
 	return result;
 }
 
-static void attract_particles_batched(struct particle_system *system, const float dt, const size_t thread_id, const size_t start, const size_t end);
-static void attract_particles_sse_batched(struct particle_system *system, const float dt, const struct thread_data* thread_data);
-static void attract_particles_avx_batched(struct particle_system *system, const float dt, const struct thread_data* thread_data);
-static void attract_particles_avx512_batched(struct particle_system *system, const float dt, const struct thread_data* thread_data);
+static void attract_particles_batched(const struct thread_data* thread_data);
+static void attract_particles_sse_batched(const struct thread_data* thread_data);
+static void attract_particles_avx_batched(const struct thread_data* thread_data);
+static void attract_particles_avx512_batched(const struct thread_data* thread_data);
 
 static int thread_func(void* data)
 {
@@ -62,16 +62,16 @@ static int thread_func(void* data)
 
 #if USE_SIMD
 #if defined(__AVX512F__) && USE_AVX512
-		attract_particles_avx512_batched(thread_data->system, thread_data->dt, thread_data);
+		attract_particles_avx512_batched(thread_data);
 #elif defined(__AVX__) && USE_AVX
-		attract_particles_avx_batched(thread_data->system, thread_data->dt, thread_data);
+		attract_particles_avx_batched(thread_data);
 #elif defined(__SSE__)
-		attract_particles_sse_batched(thread_data->system, thread_data->dt, thread_data);
+		attract_particles_sse_batched(thread_data);
 #else
 #error SIMD not supported
 #endif
 #else
-		attract_particles_batched(thread_data->system, thread_data->dt, thread_data->thread_id, thread_data->start, thread_data->end);
+		attract_particles_batched(thread_data);
 #endif
 
 		SDL_SignalSemaphore(thread_data->work_done);
@@ -506,18 +506,21 @@ static void attract_particles(struct particle_system *system, const float dt) {
 	}
 }
 
-static void attract_particles_batched(struct particle_system *system, const float dt, const size_t thread_id, const size_t start, const size_t end)
+static void attract_particles_batched(const struct thread_data* thread_data)
 {
+	const float dt = thread_data->dt;
 	const float min_dist = 8*dt;
 
-	const float* pos_x = system->pos_x;
-	const float* pos_y = system->pos_y;
-	float* vel_x = system->buffer.vel_x[thread_id];
-	float* vel_y = system->buffer.vel_y[thread_id];
-	const float* mass = system->mass;
+	const float* pos_x = thread_data->system->pos_x;
+	const float* pos_y = thread_data->system->pos_y;
+	float* vel_x = thread_data->system->buffer.vel_x[thread_data->thread_id];
+	float* vel_y = thread_data->system->buffer.vel_y[thread_data->thread_id];
+	const float* mass = thread_data->system->mass;
 
-	for (size_t n = start; n < end; ++n) {
-		const struct particle_pair pair = system->pairs[n];
+	const struct particle_pair* pairs = thread_data->system->pairs;
+
+	for (size_t n = thread_data->start; n < thread_data->end; ++n) {
+		const struct particle_pair pair = pairs[n];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
 
@@ -618,20 +621,25 @@ static void attract_particles_sse(struct particle_system *system, const float dt
 	}
 }
 
-static void attract_particles_sse_batched(struct particle_system *system, const float dt, const struct thread_data* thread_data)
+static void attract_particles_sse_batched(const struct thread_data* thread_data)
 {
-	const float min_dist = 8*dt;
+	const float min_dist = 8*thread_data->dt;
 	const __m128 min_inv_dist_f = _mm_set1_ps(1.0f / min_dist);
-	const __m128 dt_f = _mm_set1_ps(dt);
 
-	const float* pos_x = system->pos_x;
-	const float* pos_y = system->pos_y;
-	const float* mass = system->mass;
-	float* vel_x = system->buffer.vel_x[thread_data->thread_id];
-	float* vel_y = system->buffer.vel_y[thread_data->thread_id];
+	const float dt = thread_data->dt;
+	const __m128 dt_f = _mm_set1_ps(thread_data->dt);
+
+	const float* pos_x = thread_data->system->pos_x;
+	const float* pos_y = thread_data->system->pos_y;
+	const float* mass = thread_data->system->mass;
+	float* vel_x = thread_data->system->buffer.vel_x[thread_data->thread_id];
+	float* vel_y = thread_data->system->buffer.vel_y[thread_data->thread_id];
+
+	const struct particle_pair* pairs_simd = thread_data->system->pairs_simd;
+	const struct particle_pair* pairs = thread_data->system->pairs;
 
 	for (size_t k = thread_data->simd_start; k < thread_data->simd_end; ++k) {
-		const struct particle_pair pair = system->pairs_simd[k];
+		const struct particle_pair pair = pairs_simd[k];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
 
@@ -677,7 +685,7 @@ static void attract_particles_sse_batched(struct particle_system *system, const 
 	}
 
 	for (size_t k = thread_data->start; k < thread_data->end; ++k) {
-		const struct particle_pair pair = system->pairs[k];
+		const struct particle_pair pair = pairs[k];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
 
@@ -778,20 +786,25 @@ static void attract_particles_avx(struct particle_system *system, const float dt
 	}
 }
 
-static void attract_particles_avx_batched(struct particle_system *system, const float dt, const struct thread_data* thread_data)
+static void attract_particles_avx_batched(const struct thread_data* thread_data)
 {
-	const float min_dist = 8*dt;
+	const float min_dist = 8*thread_data->dt;
 	const __m256 min_inv_dist_f = _mm256_set1_ps(1.0f / min_dist);
+
+	const float dt = thread_data->dt;
 	const __m256 dt_f = _mm256_set1_ps(dt);
 
-	const float* pos_x = system->pos_x;
-	const float* pos_y = system->pos_y;
-	const float* mass = system->mass;
-	float* vel_x = system->buffer.vel_x[thread_data->thread_id];
-	float* vel_y = system->buffer.vel_y[thread_data->thread_id];
+	const float* pos_x = thread_data->system->pos_x;
+	const float* pos_y = thread_data->system->pos_y;
+	const float* mass = thread_data->system->mass;
+	float* vel_x = thread_data->system->buffer.vel_x[thread_data->thread_id];
+	float* vel_y = thread_data->system->buffer.vel_y[thread_data->thread_id];
+
+	const struct particle_pair* pairs_simd = thread_data->system->pairs_simd;
+	const struct particle_pair* pairs = thread_data->system->pairs;
 
 	for (size_t k = thread_data->simd_start; k < thread_data->simd_end; ++k) {
-		const struct particle_pair pair = system->pairs_simd[k];
+		const struct particle_pair pair = pairs_simd[k];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
 
@@ -837,7 +850,7 @@ static void attract_particles_avx_batched(struct particle_system *system, const 
 	}
 
 	for (size_t k = thread_data->start; k < thread_data->end; ++k) {
-		const struct particle_pair pair = system->pairs[k];
+		const struct particle_pair pair = pairs[k];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
 
@@ -930,19 +943,24 @@ static void attract_particles_avx512(struct particle_system *system, const float
 	}
 }
 
-static void attract_particles_avx512_batched(struct particle_system *system, const float dt, const struct thread_data* thread_data) {
-	const float min_dist = 8*dt;
+static void attract_particles_avx512_batched(const struct thread_data* thread_data) {
+	const float min_dist = 8*thread_data->dt;
 	const __m512 min_inv_dist_f = _mm512_set1_ps(1.0f / min_dist);
+
+	const float dt = thread_data->dt;
 	const __m512 dt_f = _mm512_set1_ps(dt);
 
-	const float* pos_x = system->pos_x;
-	const float* pos_y = system->pos_y;
-	const float* mass = system->mass;
-	float* vel_x = system->buffer.vel_x[thread_data->thread_id];
-	float* vel_y = system->buffer.vel_y[thread_data->thread_id];
+	const float* pos_x = thread_data->system->pos_x;
+	const float* pos_y = thread_data->system->pos_y;
+	const float* mass = thread_data->system->mass;
+	float* vel_x = thread_data->system->buffer.vel_x[thread_data->thread_id];
+	float* vel_y = thread_data->system->buffer.vel_y[thread_data->thread_id];
+
+	const struct particle_pair* pairs_simd = thread_data->system->pairs_simd;
+	const struct particle_pair* pairs = thread_data->system->pairs;
 
 	for (size_t k = thread_data->simd_start; k < thread_data->simd_end; ++k) {
-		const struct particle_pair pair = system->pairs_simd[k];
+		const struct particle_pair pair = pairs_simd[k];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
 
@@ -980,7 +998,7 @@ static void attract_particles_avx512_batched(struct particle_system *system, con
 	}
 
 	for (size_t k = thread_data->start; k < thread_data->end; ++k) {
-		const struct particle_pair pair = system->pairs[k];
+		const struct particle_pair pair = pairs[k];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
 
@@ -1229,9 +1247,11 @@ static void expand_universe(struct particle_system* system, const float amount)
 #endif
 }
 
-bool particle_system_update(struct particle_system* system)
+bool particle_system_update(struct particle_system* system, float dt)
 {
-	const float dt = 1e-6f;
+	for (size_t thread = 0; thread < system->num_threads; ++thread) {
+		system->thread_data[thread].dt = dt;
+	}
 
 	const float amount = 0.7f / calculate_standard_distribution(system);
 	expand_universe(system, amount);
