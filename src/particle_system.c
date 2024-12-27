@@ -17,14 +17,6 @@
 #include <immintrin.h>
 #include "simd_util.h"
 
-static void copy_pos_to_points(struct particle_system* system)
-{
-	for (size_t i = 0; i < system->num_particles; ++i) {
-		system->points[i].x = (system->pos_x[i] + 1.6f) * (WINDOW_HEIGHT / 2.0f);
-		system->points[i].y = (system->pos_y[i] + 1.0f) * (WINDOW_HEIGHT / 2.0f);
-	}
-}
-
 static uint64_t combination(uint64_t n, uint64_t r)
 {
 	if (r > (n-r)) {
@@ -60,19 +52,21 @@ static int thread_func(void* data)
 			break;
 		}
 
+		for (uint32_t i = 0; i < thread_data->num_updates; ++i) {
 #if USE_SIMD
 #if defined(__AVX512F__) && USE_AVX512
-		attract_particles_avx512_batched(thread_data);
+			attract_particles_avx512_batched(thread_data);
 #elif defined(__AVX__) && USE_AVX
-		attract_particles_avx_batched(thread_data);
+			attract_particles_avx_batched(thread_data);
 #elif defined(__SSE__)
-		attract_particles_sse_batched(thread_data);
+			attract_particles_sse_batched(thread_data);
 #else
 #error SIMD not supported
 #endif
 #else
-		attract_particles_batched(thread_data);
+			attract_particles_batched(thread_data);
 #endif
+		}
 
 		SDL_SignalSemaphore(thread_data->work_done);
 	}
@@ -90,14 +84,12 @@ static bool allocate_memory(struct particle_system* system, const uint32_t num_p
 	system->vel_x  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
 	system->vel_y  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
 	system->mass   = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
-	system->points = SDL_calloc(system->num_particles, sizeof(*system->points));
 
 	if (system->pos_x  == NULL ||
 		system->pos_y  == NULL ||
 		system->vel_x  == NULL ||
 		system->vel_y  == NULL ||
-		system->mass   == NULL ||
-		system->points == NULL)
+		system->mass   == NULL)
 	{
 		return false;
 	}
@@ -315,7 +307,8 @@ static bool initialize_threads(struct particle_system* system)
 #if USE_SIMD
 		const struct thread_data data = {.system = system, .dt = 1e-6f, .thread_id = i, .simd_start = st2, .simd_end = nd2,
 			.start = st, .end = nd, .work_start = system->work_start,
-			.work_done = system->work_done, .exit_flag = &system->exit_flag};
+			.work_done = system->work_done, .exit_flag = &system->exit_flag,
+			.num_updates = 1};
 		st += system->pairs_length/system->num_threads;
 		nd += system->pairs_length/system->num_threads;
 		st2 += system->pairs_simd_length/system->num_threads;
@@ -350,8 +343,6 @@ bool particle_system_init(struct particle_system* system, const uint32_t num_par
 
 	initialize_particles(system);
 
-	copy_pos_to_points(system);
-
 	if (!generate_particle_pairs(system)) {
 		return false;
 	}
@@ -380,8 +371,6 @@ void particle_system_free(struct particle_system* system)
 	SDL_free(system->pairs);
 	SDL_free(system->pairs_simd);
 #endif
-
-	SDL_free(system->points);
 
 #if USE_MULTITHREADING
 	SDL_SetAtomicInt(&system->exit_flag, 1);
@@ -1247,10 +1236,15 @@ static void expand_universe(struct particle_system* system, const float amount)
 #endif
 }
 
-bool particle_system_update(struct particle_system* system, float dt)
+void particle_system_update(struct particle_system* system, float dt, uint32_t num_updates)
 {
+	if (num_updates == 0) {
+		return;
+	}
+
 	for (size_t thread = 0; thread < system->num_threads; ++thread) {
 		system->thread_data[thread].dt = dt;
+		system->thread_data[thread].num_updates = num_updates;
 	}
 
 	const float amount = 0.7f / calculate_standard_distribution(system);
@@ -1264,11 +1258,17 @@ bool particle_system_update(struct particle_system* system, float dt)
 
 #if USE_SIMD && !USE_MULTITHREADING
 #if defined(__AVX512F__) && USE_AVX512
-	attract_particles_avx512(system, dt);
+	for (uint32_t i = 0; i < num_updates; ++i) {
+		attract_particles_avx512(system, dt);
+	}
 #elif defined(__AVX__) && USE_AVX
-	attract_particles_avx(system, dt);
+	for (uint32_t i = 0; i < num_updates; ++i) {
+		attract_particles_avx(system, dt);
+	}
 #elif defined(__SSE__)
-	attract_particles_sse(system, dt);
+	for (uint32_t i = 0; i < num_updates; ++i) {
+		attract_particles_sse(system, dt);
+	}
 #else
 #error SIMD not supported
 #endif
@@ -1284,7 +1284,9 @@ bool particle_system_update(struct particle_system* system, float dt)
 		SDL_WaitSemaphore(system->work_done);
 	}
 #else
-	attract_particles(system, dt);
+	for (uint32_t i = 0; i < num_updates; ++i) {
+		attract_particles(system, dt);
+	}
 #endif
 
 #endif
@@ -1301,8 +1303,4 @@ bool particle_system_update(struct particle_system* system, float dt)
 #endif
 
 	move_particles(system, dt);
-
-	copy_pos_to_points(system);
-
-	return true;
 }

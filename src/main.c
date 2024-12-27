@@ -5,9 +5,6 @@
 #include "timer.h"
 #include "util.h"
 
-#define EXIT_SUCCESS 0
-#define EXIT_FAILURE (-1)
-
 int main(const int argc, char** argv)
 {
     uint32_t particle_count = NUM_PARTICLES;
@@ -22,24 +19,19 @@ int main(const int argc, char** argv)
         }
     }
 
-    int exitcode = EXIT_SUCCESS;
-
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to initialize SDL!\n%s\n", SDL_GetError());
-        exitcode = EXIT_FAILURE;
         goto cleanup1;
     }
 
     SDL_Window* window = SDL_CreateWindow(WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, 0);
     if (window == NULL) {
         SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL Window!\n%s\n", SDL_GetError());
-        exitcode = EXIT_FAILURE;
         goto cleanup2;
     }
 
     struct particle_system particle_system = { 0 };
     if (!particle_system_init(&particle_system, particle_count)) {
-        exitcode = EXIT_FAILURE;
         goto cleanup3;
     }
 
@@ -49,7 +41,6 @@ int main(const int argc, char** argv)
     SDL_Surface* surface = SDL_GetWindowSurface(window);
     if (surface == NULL) {
         SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to get surface!\n%s\n", SDL_GetError());
-        exitcode = EXIT_FAILURE;
         goto cleanup4;
     }
 
@@ -59,7 +50,6 @@ int main(const int argc, char** argv)
 
     if (window_values == NULL || tmp_buf == NULL || window_chars == NULL) {
         SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to allocate memory!\n%s\n", SDL_GetError());
-        exitcode = EXIT_FAILURE;
         goto cleanup4;
     }
 
@@ -67,7 +57,6 @@ int main(const int argc, char** argv)
     const SDL_PixelFormatDetails* pixel_format_details = SDL_GetPixelFormatDetails(surface->format);
     if (pixel_format_details == NULL) {
         SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to get pixel format details!\n%s\n", SDL_GetError());
-        exitcode = EXIT_FAILURE;
         goto cleanup5;
     }
 
@@ -157,9 +146,8 @@ int main(const int argc, char** argv)
         }
 
         timer_start(&update_timer);
-        // TODO: Pass num_updates to the particle system
-        for (uint32_t i = 0; i < num_updates && simulate; i++) {
-            particle_system_update(&particle_system, dt);
+        if (simulate) {
+            particle_system_update(&particle_system, dt, num_updates);
         }
         timer_stop(&update_timer);
 
@@ -201,33 +189,6 @@ int main(const int argc, char** argv)
         }
 
         SDL_UpdateWindowSurface(window);
-
-#if 0
-        if (!SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)) {
-            SDL_LogCritical(SDL_LOG_CATEGORY_RENDER, "Failed to set render draw color!\n%s\n", SDL_GetError());
-            goto cleanup5;
-        }
-
-        if (!SDL_RenderClear(renderer)) {
-            SDL_LogCritical(SDL_LOG_CATEGORY_RENDER, "Failed to clear the rendering target!\n%s\n", SDL_GetError());
-            goto cleanup5;
-        }
-
-        if (!SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255)) {
-            SDL_LogCritical(SDL_LOG_CATEGORY_RENDER, "Failed to set render draw color!\n%s\n", SDL_GetError());
-            goto cleanup5;
-        }
-
-        if (!SDL_RenderPoints(renderer, particle_system.points, (int)particle_system.num_particles)) {
-            SDL_LogCritical(SDL_LOG_CATEGORY_RENDER, "Failed to draw points!\n%s\n", SDL_GetError());
-            goto cleanup5;
-        }
-
-        if (!SDL_RenderPresent(renderer)) {
-            SDL_LogCritical(SDL_LOG_CATEGORY_RENDER, "Failed to present the rendering target!\n%s\n", SDL_GetError());
-            goto cleanup5;
-        }
-#endif
     }
 cleanup5:
     SDL_free(window_values);
@@ -240,5 +201,5 @@ cleanup3:
 cleanup2:
     SDL_Quit();
 cleanup1:
-    return exitcode;
+    return 0;
 }

@@ -22,6 +22,7 @@ struct thread_data
 {
 	struct particle_system* system;
 	float dt;
+	uint32_t num_updates;
 	size_t thread_id;
 	size_t simd_start;
 	size_t simd_end;
@@ -41,7 +42,6 @@ struct particle_system
 	float* vel_y;
 	float* mass;
 
-	SDL_FPoint* points;
 	pcg32_random_t rng;
 
 	struct particles_buffer buffer;
@@ -65,4 +65,4 @@ struct particle_system
 bool particle_system_init(struct particle_system* system, uint32_t num_particles);
 void particle_system_free(struct particle_system* system);
 
-bool particle_system_update(struct particle_system* system, float dt);
+void particle_system_update(struct particle_system* system, float dt, uint32_t num_updates);
