@@ -5,6 +5,8 @@
 
 #include "config.h"
 
+#include "stb_image_write.h"
+
 void set_pixel(SDL_Surface* surface, uint32_t x, uint32_t y, Uint32 pixel)
 {
     Uint8* target_pixel = (Uint8*)surface->pixels + y * surface->pitch + x * 4;
@@ -271,4 +273,17 @@ void blur5x5(float* values, uint32_t width, uint32_t height, float* tmp_buf)
         }
     }
 #endif
+}
+
+bool save_image(uint8_t* pixels, uint32_t width, uint32_t height, uint32_t name_index) {
+
+    if (!SDL_CreateDirectory("img/")) {
+        SDL_Log("Failed to create directory\n%s\n", SDL_GetError());
+        return false;
+    }
+
+    char filename[256];
+    SDL_snprintf(filename, COUNT_OF(filename), "img/%07d.jpg", name_index);
+
+    return stbi_write_jpg(filename, width, height, 1, pixels, 90);
 }

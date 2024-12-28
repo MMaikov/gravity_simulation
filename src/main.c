@@ -71,8 +71,11 @@ int main(const int argc, char** argv)
     float mouse_pos_x = 0.0f;
     float mouse_pos_y = 0.0f;
 
-    bool simulate = true;
+    bool simulate = false;
+    bool record = false;
+
     int32_t num_updates = 1;
+    uint32_t img_num = 0;
     float dt = 1e-6f;
 
     SDL_Event e;
@@ -118,6 +121,10 @@ int main(const int argc, char** argv)
                         particle_system_reset(&particle_system);
                         timer_reset(&update_timer);
                         simulate = false;
+                        break;
+                    case SDLK_S:
+                        simulate = true;
+                        record = true;
                         break;
                     case SDLK_O:
                         view_scale *= 0.98f;
@@ -193,6 +200,14 @@ int main(const int argc, char** argv)
         if (!SDL_SetWindowTitle(window, title_buf)) {
             SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to set window title!\n%s\n", SDL_GetError());
             goto cleanup5;
+        }
+
+        if (record) {
+            if (!save_image(window_chars, WINDOW_WIDTH, WINDOW_HEIGHT, img_num)) {
+                SDL_Log("Failed to save image!");
+                record = false;
+            }
+            img_num++;
         }
 
         SDL_UpdateWindowSurface(window);
