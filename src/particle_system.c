@@ -295,22 +295,6 @@ void particle_system_reset(struct particle_system* system) {
 
 void particle_system_free(struct particle_system* system)
 {
-	SDL_aligned_free(system->pos_x);
-	SDL_aligned_free(system->pos_y);
-	SDL_aligned_free(system->vel_x);
-	SDL_aligned_free(system->vel_y);
-	SDL_aligned_free(system->mass );
-
-#if USE_MULTITHREADING
-	for (size_t i = 0; i < system->num_threads; ++i) {
-		SDL_aligned_free(system->buffer.vel_x[i]);
-		SDL_aligned_free(system->buffer.vel_y[i]);
-	}
-
-	SDL_free(system->pairs);
-	SDL_free(system->pairs_simd);
-#endif
-
 #if USE_MULTITHREADING
 	SDL_SetAtomicInt(&system->exit_flag, 1);
 
@@ -325,7 +309,21 @@ void particle_system_free(struct particle_system* system)
 
 	SDL_DestroySemaphore(system->work_start);
 	SDL_DestroySemaphore(system->work_done);
+
+	for (size_t i = 0; i < system->num_threads; ++i) {
+		SDL_aligned_free(system->buffer.vel_x[i]);
+		SDL_aligned_free(system->buffer.vel_y[i]);
+	}
+
+	SDL_free(system->pairs);
+	SDL_free(system->pairs_simd);
 #endif
+
+	SDL_aligned_free(system->pos_x);
+	SDL_aligned_free(system->pos_y);
+	SDL_aligned_free(system->vel_x);
+	SDL_aligned_free(system->vel_y);
+	SDL_aligned_free(system->mass );
 }
 
 static void move_particles(struct particle_system *system, const float dt)
