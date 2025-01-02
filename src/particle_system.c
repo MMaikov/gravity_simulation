@@ -951,8 +951,8 @@ static void calculate_average(struct particle_system* system, float* out_avg_x, 
 	const float* pos_x = system->pos_x;
 	const float* pos_y = system->pos_y;
 
-	__m512 avg_x_f = _mm512_set1_ps(0.0f);
-	__m512 avg_y_f = _mm512_set1_ps(0.0f);
+	__m512 avg_x_f = _mm512_setzero_ps();
+	__m512 avg_y_f = _mm512_setzero_ps();
 	for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
 		const __m512 pos_x_f = _mm512_load_ps(pos_x + i);
 		avg_x_f = _mm512_add_ps(avg_x_f, pos_x_f);
@@ -966,8 +966,8 @@ static void calculate_average(struct particle_system* system, float* out_avg_x, 
 	const float* pos_x = system->pos_x;
 	const float* pos_y = system->pos_y;
 
-	__m256 avg_x_f = _mm256_set1_ps(0.0f);
-	__m256 avg_y_f = _mm256_set1_ps(0.0f);
+	__m256 avg_x_f = _mm256_setzero_ps();
+	__m256 avg_y_f = _mm256_setzero_ps();
 	for (size_t i = 0; i < system->num_particles; i += AVX_FLOATS) {
 		const __m256 pos_x_f = _mm256_load_ps(pos_x + i);
 		avg_x_f = _mm256_add_ps(avg_x_f, pos_x_f);
@@ -981,8 +981,8 @@ static void calculate_average(struct particle_system* system, float* out_avg_x, 
 	const float* pos_x = system->pos_x;
 	const float* pos_y = system->pos_y;
 
-	__m128 avg_x_f = _mm_set1_ps(0.0f);
-	__m128 avg_y_f = _mm_set1_ps(0.0f);
+	__m128 avg_x_f = _mm_setzero_ps();
+	__m128 avg_y_f = _mm_setzero_ps();
 	for (size_t i = 0; i < system->num_particles; i += SSE_FLOATS) {
 		const __m128 pos_x_f = _mm_load_ps(pos_x + i);
 		avg_x_f = _mm_add_ps(avg_x_f, pos_x_f);
@@ -1019,8 +1019,8 @@ static float calculate_standard_distribution(struct particle_system* system)
 	const float* pos_x = system->pos_x;
 	const float* pos_y = system->pos_y;
 
-	__m512 x_dist_f = _mm512_set1_ps(0.0f);
-	__m512 y_dist_f = _mm512_set1_ps(0.0f);
+	__m512 x_dist_f = _mm512_setzero_ps();
+	__m512 y_dist_f = _mm512_setzero_ps();
 	const __m512 x_avg_f = _mm512_set1_ps(x_avg);
 	const __m512 y_avg_f = _mm512_set1_ps(y_avg);
 	for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
@@ -1039,8 +1039,8 @@ static float calculate_standard_distribution(struct particle_system* system)
 	const float* pos_x = system->pos_x;
 	const float* pos_y = system->pos_y;
 
-	__m256 x_dist_f = _mm256_set1_ps(0.0f);
-	__m256 y_dist_f = _mm256_set1_ps(0.0f);
+	__m256 x_dist_f = _mm256_setzero_ps();
+	__m256 y_dist_f = _mm256_setzero_ps();
 	const __m256 x_avg_f = _mm256_set1_ps(x_avg);
 	const __m256 y_avg_f = _mm256_set1_ps(y_avg);
 	for (size_t i = 0; i < system->num_particles; i += AVX_FLOATS) {
@@ -1067,8 +1067,8 @@ static float calculate_standard_distribution(struct particle_system* system)
 	const float* pos_x = system->pos_x;
 	const float* pos_y = system->pos_y;
 
-	__m128 x_dist_f = _mm_set1_ps(0.0f);
-	__m128 y_dist_f = _mm_set1_ps(0.0f);
+	__m128 x_dist_f = _mm_setzero_ps();
+	__m128 y_dist_f = _mm_setzero_ps();
 	const __m128 x_avg_f = _mm_set1_ps(x_avg);
 	const __m128 y_avg_f = _mm_set1_ps(y_avg);
 	for (size_t i = 0; i < system->num_particles; i += SSE_FLOATS) {
