@@ -78,12 +78,12 @@ static bool allocate_memory(struct particle_system* system, const uint32_t num_p
 {
 	system->num_particles = num_particles;
 
-	const size_t PARTICLES_LENGTH = (system->num_particles + AVX512_FLOATS) * sizeof(float);
-	system->pos_x  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
-	system->pos_y  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
-	system->vel_x  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
-	system->vel_y  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
-	system->mass   = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
+	const size_t PARTICLES_BYTELENGTH = (system->num_particles + AVX512_FLOATS) * sizeof(float);
+	system->pos_x  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
+	system->pos_y  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
+	system->vel_x  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
+	system->vel_y  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
+	system->mass   = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
 
 	if (system->pos_x  == NULL ||
 		system->pos_y  == NULL ||
@@ -100,8 +100,8 @@ static bool allocate_memory(struct particle_system* system, const uint32_t num_p
 		float** vel_x = system->buffer.vel_x + i;
 		float** vel_y = system->buffer.vel_y + i;
 
-		(*vel_x)  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
-		(*vel_y)  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_LENGTH);
+		(*vel_x)  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
+		(*vel_y)  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
 		if ((*vel_x) == NULL || (*vel_y) == NULL) {
 			return false;
 		}
@@ -1179,10 +1179,12 @@ void particle_system_update(struct particle_system* system, float dt, uint32_t n
 		return;
 	}
 
+#if USE_MULTITHREADING
 	for (size_t thread = 0; thread < system->num_threads; ++thread) {
 		system->thread_data[thread].dt = dt;
 		system->thread_data[thread].num_updates = num_updates;
 	}
+#endif
 
 	const float amount = 0.7f / calculate_standard_distribution(system);
 	expand_universe(system, amount);
@@ -1231,13 +1233,66 @@ void particle_system_update(struct particle_system* system, float dt, uint32_t n
 #endif
 
 #if USE_MULTITHREADING
-	for (size_t i = 0; i < system->num_particles; ++i) {
-		for (size_t thread = 0; thread < system->num_threads; ++thread) {
-			system->vel_x[i] += system->buffer.vel_x[thread][i];
-			system->vel_y[i] += system->buffer.vel_y[thread][i];
-			system->buffer.vel_x[thread][i] = 0.0f;
-			system->buffer.vel_y[thread][i] = 0.0f;
+	for (size_t thread = 0; thread < system->num_threads; ++thread) {
+		float* buffer_vel_x = system->buffer.vel_x[thread];
+		float* buffer_vel_y = system->buffer.vel_y[thread];
+		float* vel_x = system->vel_x;
+		float* vel_y = system->vel_y;
+
+#if USE_SIMD
+#if defined(__AVX512F__) && USE_AVX512
+		const __m512 zero = _mm512_setzero_ps();
+		for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
+			const __m512 buffer_vel_x_f = _mm512_load_ps(buffer_vel_x + i);
+			const __m512 buffer_vel_y_f = _mm512_load_ps(buffer_vel_y + i);
+			__m512 vel_x_f = _mm512_load_ps(vel_x + i);
+			__m512 vel_y_f = _mm512_load_ps(vel_y + i);
+			vel_x_f = _mm512_add_ps(vel_x_f, buffer_vel_x_f);
+            vel_y_f = _mm512_add_ps(vel_y_f, buffer_vel_y_f);
+			_mm512_store_ps(vel_x + i, vel_x_f);
+			_mm512_store_ps(vel_y + i, vel_y_f);
+			_mm512_store_ps(buffer_vel_x + i, zero);
+			_mm512_store_ps(buffer_vel_y + i, zero);
 		}
+#elif defined(__AVX__) && USE_AVX
+		const __m256 zero = _mm256_setzero_ps();
+		for (size_t i = 0; i < system->num_particles; i += AVX_FLOATS) {
+			const __m256 buffer_vel_x_f = _mm256_load_ps(buffer_vel_x + i);
+			const __m256 buffer_vel_y_f = _mm256_load_ps(buffer_vel_y + i);
+			__m256 vel_x_f = _mm256_load_ps(vel_x + i);
+			__m256 vel_y_f = _mm256_load_ps(vel_y + i);
+			vel_x_f = _mm256_add_ps(vel_x_f, buffer_vel_x_f);
+			vel_y_f = _mm256_add_ps(vel_y_f, buffer_vel_y_f);
+			_mm256_store_ps(vel_x + i, vel_x_f);
+			_mm256_store_ps(vel_y + i, vel_y_f);
+			_mm256_store_ps(buffer_vel_x + i, zero);
+			_mm256_store_ps(buffer_vel_y + i, zero);
+		}
+#elif defined(__SSE__)
+		const __m128 zero = _mm_setzero_ps();
+		for (size_t i = 0; i < system->num_particles; i += SSE_FLOATS) {
+			const __m128 buffer_vel_x_f = _mm_load_ps(buffer_vel_x + i);
+			const __m128 buffer_vel_y_f = _mm_load_ps(buffer_vel_y + i);
+			__m128 vel_x_f = _mm_load_ps(vel_x + i);
+			__m128 vel_y_f = _mm_load_ps(vel_y + i);
+			vel_x_f = _mm_add_ps(vel_x_f, buffer_vel_x_f);
+			vel_y_f = _mm_add_ps(vel_y_f, buffer_vel_y_f);
+			_mm_store_ps(vel_x + i, vel_x_f);
+			_mm_store_ps(vel_y + i, vel_y_f);
+			_mm_store_ps(buffer_vel_x + i, zero);
+			_mm_store_ps(buffer_vel_y + i, zero);
+		}
+#else
+#error SIMD not supported
+#endif
+#else
+		for (size_t i = 0; i < system->num_particles; ++i) {
+			vel_x[i] += buffer_vel_x[i];
+			vel_y[i] += buffer_vel_y[i];
+			buffer_vel_x[i] = 0.0f;
+			buffer_vel_y[i] = 0.0f;
+		}
+#endif
 	}
 #endif
 
