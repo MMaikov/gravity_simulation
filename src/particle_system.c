@@ -144,118 +144,53 @@ static bool generate_particle_pairs(struct particle_system* system)
 {
 #if USE_MULTITHREADING
 #if USE_SIMD
+
 #if defined(__AVX512F__) && USE_AVX512
-	size_t it = 0;
-
-	const int use_particles = AVX512_FLOATS*(system->num_particles/AVX512_FLOATS);
-	system->pairs_simd_length = (use_particles - AVX512_FLOATS) * (use_particles / AVX512_FLOATS + 1);
-	system->pairs_simd = SDL_calloc(system->pairs_simd_length, sizeof(*system->pairs_simd));
-
-	system->pairs_length = AVX512_FLOATS*system->num_particles;
-	system->pairs      = SDL_calloc(system->pairs_length, sizeof(*system->pairs));
-
-	if (system->pairs_simd == NULL || system->pairs == NULL) {
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to allocate memory!\n");
-		return false;
-	}
-
-	for (size_t hop = AVX512_FLOATS; hop < use_particles; ++hop) {
-		for (size_t n = 0; n < use_particles/AVX512_FLOATS+1; ++n) {
-			const size_t i = n*AVX512_FLOATS;
-			const size_t j = (i + hop) % (use_particles);
-
-			const struct particle_pair pair = {.i = i, .j = j};
-			system->pairs_simd[it++] = pair;
-		}
-	}
-
-	it = 0;
-
-	for (size_t k = 0; k < AVX512_FLOATS; ++k) {
-		for (size_t n = 0; n < system->num_particles; ++n) {
-			const size_t i = n;
-			const size_t j = (n + k) % system->num_particles;
-
-			const struct particle_pair pair = {.i = i, .j = j};
-			system->pairs[it++] = pair;
-		}
-	}
+	const uint32_t SIMD_MULTIPLE = AVX512_FLOATS;
 #elif defined(__AVX__) && USE_AVX
-
-	size_t it = 0;
-
-	const int use_particles = AVX_FLOATS*(system->num_particles/AVX_FLOATS);
-	system->pairs_simd_length = (use_particles - AVX_FLOATS) * (use_particles / AVX_FLOATS + 1);
-	system->pairs_simd = SDL_calloc(system->pairs_simd_length, sizeof(*system->pairs_simd));
-
-	system->pairs_length = AVX_FLOATS*system->num_particles;
-	system->pairs      = SDL_calloc(system->pairs_length, sizeof(*system->pairs));
-
-	if (system->pairs_simd == NULL || system->pairs == NULL) {
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to allocate memory!\n");
-		return false;
-	}
-
-	for (size_t hop = AVX_FLOATS; hop < use_particles; ++hop) {
-		for (size_t n = 0; n < use_particles/AVX_FLOATS+1; ++n) {
-			const size_t i = n*AVX_FLOATS;
-			const size_t j = (i + hop) % (use_particles);
-
-			const struct particle_pair pair = {.i = i, .j = j};
-			system->pairs_simd[it++] = pair;
-		}
-	}
-
-	it = 0;
-
-	for (size_t k = 0; k < AVX_FLOATS; ++k) {
-		for (size_t n = 0; n < system->num_particles; ++n) {
-			const size_t i = n;
-			const size_t j = (n + k) % system->num_particles;
-
-			const struct particle_pair pair = {.i = i, .j = j};
-			system->pairs[it++] = pair;
-		}
-	}
+	const uint32_t SIMD_MULTIPLE = AVX_FLOATS;
 #elif defined(__SSE__)
-	size_t it = 0;
-
-	const int use_particles = SSE_FLOATS*(system->num_particles/SSE_FLOATS);
-	system->pairs_simd_length = (use_particles - SSE_FLOATS) * (use_particles / SSE_FLOATS + 1);
-	system->pairs_simd = SDL_calloc(system->pairs_simd_length, sizeof(*system->pairs_simd));
-
-	system->pairs_length = SSE_FLOATS*system->num_particles;
-	system->pairs      = SDL_calloc(system->pairs_length, sizeof(*system->pairs));
-
-	if (system->pairs_simd == NULL || system->pairs == NULL) {
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to allocate memory!\n");
-		return false;
-	}
-
-	for (size_t hop = SSE_FLOATS; hop < use_particles; ++hop) {
-		for (size_t n = 0; n < use_particles/SSE_FLOATS+1; ++n) {
-			const size_t i = n*SSE_FLOATS;
-			const size_t j = (i + hop) % (use_particles);
-
-			const struct particle_pair pair = {.i = i, .j = j};
-			system->pairs_simd[it++] = pair;
-		}
-	}
-
-	it = 0;
-
-	for (size_t k = 0; k < SSE_FLOATS; ++k) {
-		for (size_t n = 0; n < system->num_particles; ++n) {
-			const size_t i = n;
-			const size_t j = (n + k) % system->num_particles;
-
-			const struct particle_pair pair = {.i = i, .j = j};
-			system->pairs[it++] = pair;
-		}
-	}
+	const uint32_t SIMD_MULTIPLE = SSE_FLOATS;
 #else
 #error SIMD not supported
 #endif
+
+	size_t it = 0;
+
+	const uint32_t use_particles = SIMD_MULTIPLE*(system->num_particles/SIMD_MULTIPLE);
+	system->pairs_simd_length = (use_particles - SIMD_MULTIPLE) * (use_particles / SIMD_MULTIPLE + 1);
+	system->pairs_simd = SDL_calloc(system->pairs_simd_length, sizeof(*system->pairs_simd));
+
+	system->pairs_length = SIMD_MULTIPLE*system->num_particles;
+	system->pairs      = SDL_calloc(system->pairs_length, sizeof(*system->pairs));
+
+	if (system->pairs_simd == NULL || system->pairs == NULL) {
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to allocate memory!\n");
+		return false;
+	}
+
+	for (size_t hop = SIMD_MULTIPLE; hop < use_particles; ++hop) {
+		for (size_t n = 0; n < use_particles/SIMD_MULTIPLE+1; ++n) {
+			const size_t i = n*SIMD_MULTIPLE;
+			const size_t j = (i + hop) % (use_particles);
+
+			const struct particle_pair pair = {.i = i, .j = j};
+			system->pairs_simd[it++] = pair;
+		}
+	}
+
+	it = 0;
+
+	for (size_t k = 0; k < SIMD_MULTIPLE; ++k) {
+		for (size_t n = 0; n < system->num_particles; ++n) {
+			const size_t i = n;
+			const size_t j = (n + k) % system->num_particles;
+
+			const struct particle_pair pair = {.i = i, .j = j};
+			system->pairs[it++] = pair;
+		}
+	}
+
 #else
 
 	system->pairs_length = combination(system->num_particles, 2);
