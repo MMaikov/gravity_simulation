@@ -159,7 +159,9 @@ int main(const int argc, char** argv)
 
         if (simulate) {
             timer_start(&update_timer);
-            particle_system_update(&particle_system, dt, num_updates);
+            for (size_t i = 0; i < num_updates; i++) {
+                particle_system_update(&particle_system, dt);
+            }
             timer_stop(&update_timer);
         } else {
             timer_reset(&update_timer);

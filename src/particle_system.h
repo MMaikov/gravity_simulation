@@ -22,7 +22,6 @@ struct thread_data
 {
 	struct particle_system* system;
 	float dt;
-	uint32_t num_updates;
 	size_t thread_id;
 	size_t simd_start;
 	size_t simd_end;
@@ -67,4 +66,4 @@ void particle_system_free(struct particle_system* system);
 
 void particle_system_reset(struct particle_system* system);
 
-void particle_system_update(struct particle_system* system, float dt, uint32_t num_updates);
+void particle_system_update(struct particle_system* system, float dt);

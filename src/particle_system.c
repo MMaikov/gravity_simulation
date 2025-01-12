@@ -52,21 +52,19 @@ static int thread_func(void* data)
 			break;
 		}
 
-		for (uint32_t i = 0; i < thread_data->num_updates; ++i) {
 #if USE_SIMD
 #if defined(__AVX512F__) && USE_AVX512
-			attract_particles_avx512_batched(thread_data);
+		attract_particles_avx512_batched(thread_data);
 #elif defined(__AVX__) && USE_AVX
-			attract_particles_avx_batched(thread_data);
+		attract_particles_avx_batched(thread_data);
 #elif defined(__SSE__)
-			attract_particles_sse_batched(thread_data);
+		attract_particles_sse_batched(thread_data);
 #else
 #error SIMD not supported
 #endif
 #else
-			attract_particles_batched(thread_data);
+		attract_particles_batched(thread_data);
 #endif
-		}
 
 		SDL_SignalSemaphore(thread_data->work_done);
 	}
@@ -242,8 +240,7 @@ static bool initialize_threads(struct particle_system* system)
 #if USE_SIMD
 		const struct thread_data data = {.system = system, .dt = 1e-6f, .thread_id = i, .simd_start = st2, .simd_end = nd2,
 			.start = st, .end = nd, .work_start = system->work_start,
-			.work_done = system->work_done, .exit_flag = &system->exit_flag,
-			.num_updates = 1};
+			.work_done = system->work_done, .exit_flag = &system->exit_flag};
 		st += system->pairs_length/system->num_threads;
 		nd += system->pairs_length/system->num_threads;
 		st2 += system->pairs_simd_length/system->num_threads;
@@ -1173,16 +1170,11 @@ static void expand_universe(struct particle_system* system, const float amount)
 #endif
 }
 
-void particle_system_update(struct particle_system* system, float dt, uint32_t num_updates)
+void particle_system_update(struct particle_system* system, float dt)
 {
-	if (num_updates == 0) {
-		return;
-	}
-
 #if USE_MULTITHREADING
 	for (size_t thread = 0; thread < system->num_threads; ++thread) {
 		system->thread_data[thread].dt = dt;
-		system->thread_data[thread].num_updates = num_updates;
 	}
 #endif
 
@@ -1199,17 +1191,11 @@ void particle_system_update(struct particle_system* system, float dt, uint32_t n
 
 #if USE_SIMD && !USE_MULTITHREADING
 #if defined(__AVX512F__) && USE_AVX512
-	for (uint32_t i = 0; i < num_updates; ++i) {
-		attract_particles_avx512(system, dt);
-	}
+	attract_particles_avx512(system, dt);
 #elif defined(__AVX__) && USE_AVX
-	for (uint32_t i = 0; i < num_updates; ++i) {
-		attract_particles_avx(system, dt);
-	}
+	attract_particles_avx(system, dt);
 #elif defined(__SSE__)
-	for (uint32_t i = 0; i < num_updates; ++i) {
-		attract_particles_sse(system, dt);
-	}
+	attract_particles_sse(system, dt);
 #else
 #error SIMD not supported
 #endif
@@ -1225,9 +1211,7 @@ void particle_system_update(struct particle_system* system, float dt, uint32_t n
 		SDL_WaitSemaphore(system->work_done);
 	}
 #else
-	for (uint32_t i = 0; i < num_updates; ++i) {
-		attract_particles(system, dt);
-	}
+	attract_particles(system, dt);
 #endif
 
 #endif
