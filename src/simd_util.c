@@ -26,3 +26,7 @@ float hsum_ps_sse(__m128 v) {
     sums        = _mm_add_ss(sums, shuf);
     return        _mm_cvtss_f32(sums);
 }
+
+__m512i avx512_clamp_epi32(__m512i val, __m512i min, __m512i max) {
+    return _mm512_max_epi32(min, _mm512_min_epi32(val, max));
+}
