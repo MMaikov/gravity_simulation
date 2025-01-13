@@ -14,7 +14,6 @@
 #error SIMD not supported
 #endif
 
-#include <immintrin.h>
 #include "simd_util.h"
 
 static uint64_t combination(uint64_t n, uint64_t r)
@@ -238,8 +237,10 @@ static bool initialize_threads(struct particle_system* system)
 #endif
 	for (size_t i = 0; i < system->num_threads; ++i) {
 #if USE_SIMD
-		const struct thread_data data = {.system = system, .dt = 1e-6f, .thread_id = i, .simd_start = st2, .simd_end = nd2,
-			.start = st, .end = nd, .work_start = system->work_start,
+		const struct range simd_range = {.start = st2, .end = nd2 };
+		const struct range scalar_range = {.start = st, .end = nd };
+		const struct thread_data data = {.system = system, .dt = 1e-6f, .thread_id = i, .simd_range = simd_range,
+			.scalar_range = scalar_range, .work_start = system->work_start,
 			.work_done = system->work_done, .exit_flag = &system->exit_flag};
 		st += system->pairs_length/system->num_threads;
 		nd += system->pairs_length/system->num_threads;
@@ -442,7 +443,7 @@ static void attract_particles_batched(const struct thread_data* thread_data)
 
 	const struct particle_pair* pairs = thread_data->system->pairs;
 
-	for (size_t n = thread_data->start; n < thread_data->end; ++n) {
+	for (size_t n = thread_data->scalar_range.start; n < thread_data->scalar_range.end; ++n) {
 		const struct particle_pair pair = pairs[n];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
@@ -561,7 +562,7 @@ static void attract_particles_sse_batched(const struct thread_data* thread_data)
 	const struct particle_pair* pairs_simd = thread_data->system->pairs_simd;
 	const struct particle_pair* pairs = thread_data->system->pairs;
 
-	for (size_t k = thread_data->simd_start; k < thread_data->simd_end; ++k) {
+	for (size_t k = thread_data->simd_range.start; k < thread_data->simd_range.end; ++k) {
 		const struct particle_pair pair = pairs_simd[k];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
@@ -607,7 +608,7 @@ static void attract_particles_sse_batched(const struct thread_data* thread_data)
 		_mm_store_ps(vel_y + j, vel_y_j);
 	}
 
-	for (size_t k = thread_data->start; k < thread_data->end; ++k) {
+	for (size_t k = thread_data->scalar_range.start; k < thread_data->scalar_range.end; ++k) {
 		const struct particle_pair pair = pairs[k];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
@@ -726,7 +727,7 @@ static void attract_particles_avx_batched(const struct thread_data* thread_data)
 	const struct particle_pair* pairs_simd = thread_data->system->pairs_simd;
 	const struct particle_pair* pairs = thread_data->system->pairs;
 
-	for (size_t k = thread_data->simd_start; k < thread_data->simd_end; ++k) {
+	for (size_t k = thread_data->simd_range.start; k < thread_data->simd_range.end; ++k) {
 		const struct particle_pair pair = pairs_simd[k];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
@@ -772,7 +773,7 @@ static void attract_particles_avx_batched(const struct thread_data* thread_data)
 		_mm256_store_ps(vel_y + j, vel_y_j);
 	}
 
-	for (size_t k = thread_data->start; k < thread_data->end; ++k) {
+	for (size_t k = thread_data->scalar_range.start; k < thread_data->scalar_range.end; ++k) {
 		const struct particle_pair pair = pairs[k];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
@@ -882,7 +883,7 @@ static void attract_particles_avx512_batched(const struct thread_data* thread_da
 	const struct particle_pair* pairs_simd = thread_data->system->pairs_simd;
 	const struct particle_pair* pairs = thread_data->system->pairs;
 
-	for (size_t k = thread_data->simd_start; k < thread_data->simd_end; ++k) {
+	for (size_t k = thread_data->simd_range.start; k < thread_data->simd_range.end; ++k) {
 		const struct particle_pair pair = pairs_simd[k];
 		const size_t i = pair.i;
 		const size_t j = pair.j;
@@ -920,7 +921,7 @@ static void attract_particles_avx512_batched(const struct thread_data* thread_da
 		_mm512_store_ps(vel_y + j, vel_y_j);
 	}
 
-	for (size_t k = thread_data->start; k < thread_data->end; ++k) {
+	for (size_t k = thread_data->scalar_range.start; k < thread_data->scalar_range.end; ++k) {
 		const struct particle_pair pair = pairs[k];
 		const size_t i = pair.i;
 		const size_t j = pair.j;

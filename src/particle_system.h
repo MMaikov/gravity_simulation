@@ -18,15 +18,18 @@ struct particle_pair
 
 struct particle_system;
 
+struct range {
+	size_t start;
+	size_t end;
+};
+
 struct thread_data
 {
 	struct particle_system* system;
 	float dt;
 	size_t thread_id;
-	size_t simd_start;
-	size_t simd_end;
-	size_t start;
-	size_t end;
+	struct range simd_range;
+	struct range scalar_range;
 
 	SDL_Semaphore* work_start;
 	SDL_Semaphore* work_done;
