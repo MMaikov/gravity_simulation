@@ -5,7 +5,7 @@
 #include "timer.h"
 #include "util.h"
 
-#include <simd_util.h>
+#include "simd_util.h"
 
 static void write_to_window_buffer(float* window_values, struct particle_system* particle_system, float view_pos_x, float view_pos_y, float view_scale) {
 
