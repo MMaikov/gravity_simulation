@@ -15,4 +15,4 @@ void timer_start(struct timer* timer);
 void timer_stop(struct timer* timer);
 void timer_reset(struct timer* timer);
 double timer_get_elapsed(struct timer* timer);
-void timer_elapsed_str(struct timer* timer, size_t maxlen, char* buf);
+int timer_elapsed_str(struct timer* timer, size_t maxlen, char* buf);

@@ -197,7 +197,7 @@ int main(const int argc, char** argv)
     SDL_Event e;
     bool running = true;
     while (running) {
-        SDL_GetMouseState(&mouse_pos_x, &mouse_pos_y);
+        (void) SDL_GetMouseState(&mouse_pos_x, &mouse_pos_y);
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) {
                 running = false;
@@ -299,11 +299,12 @@ int main(const int argc, char** argv)
         timer_stop(&render_timer);
 
         char update_time_buf[10] = {0};
-        timer_elapsed_str(&update_timer, COUNT_OF(update_time_buf), update_time_buf);
+        (void) timer_elapsed_str(&update_timer, COUNT_OF(update_time_buf), update_time_buf);
         char render_time_buf[10] = {0};
-        timer_elapsed_str(&render_timer, COUNT_OF(render_time_buf), render_time_buf);
+        (void) timer_elapsed_str(&render_timer, COUNT_OF(render_time_buf), render_time_buf);
         char title_buf[120] = {0};
-        SDL_snprintf(title_buf, COUNT_OF(title_buf), "%s - update: %s render: %s updates: %d dt: %.10e", WINDOW_TITLE, update_time_buf, render_time_buf, num_updates, dt);
+        (void) SDL_snprintf(title_buf, COUNT_OF(title_buf), "%s - update: %s render: %s updates: %d dt: %.10e",
+            WINDOW_TITLE, update_time_buf, render_time_buf, num_updates, dt);
 
         if (!SDL_SetWindowTitle(window, title_buf)) {
             SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to set window title!\n%s\n", SDL_GetError());

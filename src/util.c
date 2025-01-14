@@ -282,8 +282,8 @@ bool save_image(uint8_t* pixels, uint32_t width, uint32_t height, uint32_t name_
         return false;
     }
 
-    char filename[256];
-    SDL_snprintf(filename, COUNT_OF(filename), "img/%07d.jpg", name_index);
+    char filename[32];
+    (void) SDL_snprintf(filename, COUNT_OF(filename), "img/%07d.jpg", name_index);
 
     return stbi_write_jpg(filename, width, height, 1, pixels, 90);
 }

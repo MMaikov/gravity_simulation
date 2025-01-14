@@ -38,7 +38,7 @@ static void attract_particles_avx512_batched(const struct thread_data* thread_da
 
 static int thread_func(void* data)
 {
-	const struct thread_data* thread_data = (struct thread_data*)data;
+	const struct thread_data* thread_data = data;
 
 	while (1) {
 		if (SDL_GetAtomicInt(thread_data->exit_flag)) {
@@ -100,6 +100,11 @@ static bool allocate_memory(struct particle_system* system, const uint32_t num_p
 		(*vel_x)  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
 		(*vel_y)  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
 		if ((*vel_x) == NULL || (*vel_y) == NULL) {
+			SDL_aligned_free(system->pos_x);
+			SDL_aligned_free(system->pos_y);
+			SDL_aligned_free(system->vel_x);
+			SDL_aligned_free(system->vel_y);
+			SDL_aligned_free(system->mass);
 			return false;
 		}
 	}
@@ -227,7 +232,7 @@ static bool initialize_threads(struct particle_system* system)
 	}
 
 	// Allow threads to start
-	SDL_SetAtomicInt(&system->exit_flag, 0);
+	(void) SDL_SetAtomicInt(&system->exit_flag, 0);
 
 	size_t st = 0;
 	size_t nd = system->pairs_length/system->num_threads;
@@ -294,7 +299,7 @@ void particle_system_reset(struct particle_system* system) {
 void particle_system_free(struct particle_system* system)
 {
 #if USE_MULTITHREADING
-	SDL_SetAtomicInt(&system->exit_flag, 1);
+	(void) SDL_SetAtomicInt(&system->exit_flag, 1);
 
 	// Wake up any threads waiting on work_start
 	for (int i = 0; i < system->num_threads; i++) {
