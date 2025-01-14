@@ -285,7 +285,10 @@ int main(const int argc, char** argv)
 
         timer_start(&render_timer);
 
-        SDL_FillSurfaceRect(surface, &window_rectangle, SDL_MapRGB(pixel_format_details, NULL, 0, 0, 0));
+        if (!SDL_FillSurfaceRect(surface, &window_rectangle, SDL_MapRGB(pixel_format_details, NULL, 0, 0, 0))) {
+            SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to fill surface!\n%s\n", SDL_GetError());
+            goto cleanup5;
+        }
 
         write_to_window_buffer(window_values, &particle_system, view_pos_x, view_pos_y, view_scale);
 
@@ -315,7 +318,10 @@ int main(const int argc, char** argv)
             img_num++;
         }
 
-        SDL_UpdateWindowSurface(window);
+        if (!SDL_UpdateWindowSurface(window)) {
+            SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to update window surface!\n%s\n", SDL_GetError());
+            goto cleanup5;
+        }
     }
 cleanup5:
     SDL_free(window_values);
