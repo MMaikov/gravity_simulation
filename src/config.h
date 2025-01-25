@@ -7,7 +7,6 @@
 #define WINDOW_TITLE "Gravity Simulator"
 
 #define USE_SIMD 1
-#define USE_FMA 1
 #define USE_AVX 1
 #define USE_AVX512 1
 

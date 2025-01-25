@@ -26,6 +26,7 @@ struct range {
 struct thread_data
 {
 	struct particle_system* system;
+	struct interface* interface;
 	float dt;
 	size_t thread_id;
 	struct range simd_range;
@@ -34,6 +35,19 @@ struct thread_data
 	SDL_Semaphore* work_start;
 	SDL_Semaphore* work_done;
 	SDL_AtomicInt* exit_flag;
+};
+
+struct interface
+{
+	void (*attract_particles)(struct particle_system *system, const float dt);
+	void (*attract_particles_batched)(const struct thread_data* thread_data);
+	void (*move_particles)(struct particle_system *system, const float dt);
+	void (*calculate_average)(struct particle_system* system, float* out_avg_x, float* out_avg_y);
+	float (*calculate_standard_distribution)(struct particle_system* system);
+	void (*expand_universe)(struct particle_system* system, const float amount);
+	void (*copy_multithreaded_velocities)(struct particle_system* system);
+
+	bool (*generate_particle_pairs)(struct particle_system* system);
 };
 
 struct particle_system
@@ -60,8 +74,10 @@ struct particle_system
 	SDL_Semaphore* work_done;
 	SDL_AtomicInt exit_flag;
 
-	int num_threads;
+	uint32_t num_threads;
 	uint32_t num_particles;
+
+	struct interface interface;
 };
 
 bool particle_system_init(struct particle_system* system, uint32_t num_particles);

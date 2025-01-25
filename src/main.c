@@ -56,7 +56,7 @@ static void write_to_window_buffer(float* window_values, struct particle_system*
 }
 
 static void write_to_surface(SDL_Surface* surface, float view_scale, float brightness, float* window_values, uint8_t* window_chars) {
-#if USE_SIMD
+#if USE_SIMD && ((defined(__AVX512F__) && USE_AVX512) || (defined(__AVX2__) && USE_AVX))
     const float view_brightness = view_scale*brightness;
 #if defined(__AVX512F__) && USE_AVX512
     const __m512 view_brightness_f = _mm512_set1_ps(view_brightness);
@@ -69,7 +69,7 @@ static void write_to_surface(SDL_Surface* surface, float view_scale, float brigh
 
         _mm512_storeu_epi32(surface->pixels + i*4, _mm512_mullo_epi32(_mm512_set1_epi32(0x01010101u), values_i));
 
-        _mm_storeu_epi8(window_chars + i, _mm512_cvtepi32_epi8(values_i));
+        _mm_storeu_si128((__m128i_u*)(window_chars + i), _mm512_cvtepi32_epi8(values_i));
     }
 #elif defined(__AVX2__) && USE_AVX
     const __m256 view_brightness_f = _mm256_set1_ps(view_brightness);
@@ -260,7 +260,7 @@ int main(const int argc, char** argv)
 
         if (simulate) {
             timer_start(&update_timer);
-            for (size_t i = 0; i < num_updates; i++) {
+            for (int32_t i = 0; i < num_updates; i++) {
                 particle_system_update(&particle_system, dt);
             }
             timer_stop(&update_timer);
