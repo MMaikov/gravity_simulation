@@ -57,8 +57,8 @@ static void write_to_window_buffer(float* window_values, struct particle_system*
 
 static void write_to_surface(SDL_Surface* surface, float view_scale, float brightness, float* window_values, uint8_t* window_chars) {
 #if USE_SIMD
-#if defined(__AVX512F__) && USE_AVX512
     const float view_brightness = view_scale*brightness;
+#if defined(__AVX512F__) && !USE_AVX512
     const __m512 view_brightness_f = _mm512_set1_ps(view_brightness);
     size_t i;
     for (i = 0; i < WINDOW_WIDTH*WINDOW_HEIGHT-16; i += AVX512_FLOATS) {
@@ -72,7 +72,6 @@ static void write_to_surface(SDL_Surface* surface, float view_scale, float brigh
         _mm_storeu_epi8(window_chars + i, _mm512_cvtepi32_epi8(values_i));
     }
 #elif defined(__AVX2__) && USE_AVX
-    const float view_brightness = view_scale*brightness;
     const __m256 view_brightness_f = _mm256_set1_ps(view_brightness);
     size_t i;
     for (i = 0; i < WINDOW_WIDTH*WINDOW_HEIGHT-8; i += AVX_FLOATS) {
@@ -81,23 +80,9 @@ static void write_to_surface(SDL_Surface* surface, float view_scale, float brigh
 
         values_i = _mm256_min_epi32(values_i, _mm256_set1_epi32(255));
 
-        _mm256_storeu_epi32(surface->pixels + i*4, _mm256_mullo_epi32(_mm256_set1_epi32(0x01010101u), values_i));
+        _mm256_storeu_si256(surface->pixels + i*4, _mm256_mullo_epi32(_mm256_set1_epi32(0x01010101u), values_i));
 
-        _mm_storeu_epi8(window_chars + i, _mm256_cvtepi32_epi8(values_i));
-    }
-#elif defined(__SSE2__)
-    const float view_brightness = view_scale*brightness;
-    const __m128 view_brightness_f = _mm_set1_ps(view_brightness);
-    size_t i;
-    for (i = 0; i < WINDOW_WIDTH*WINDOW_HEIGHT-4; i += SSE_FLOATS) {
-        __m128i values_i = _mm_cvtps_epi32(_mm_mul_ps(_mm_loadu_ps(window_values + i), view_brightness_f));
-        _mm_storeu_ps(window_values + i, _mm_setzero_ps());
-
-        values_i = _mm_min_epi32(values_i, _mm_set1_epi32(255));
-
-        _mm_storeu_epi32(surface->pixels + i*4, _mm_mullo_epi32(_mm_set1_epi32(0x01010101u), values_i));
-
-        _mm_storeu_epi8(window_chars + i, _mm_cvtepi32_epi8(values_i));
+        _mm_storeu_si64(window_chars + i, mm256_cvtepi32_epi8_avx2(values_i));
     }
 #else
 #error SIMD not supported
