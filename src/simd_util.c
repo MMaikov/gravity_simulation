@@ -27,9 +27,11 @@ float hsum_ps_sse(__m128 v) {
     return        _mm_cvtss_f32(sums);
 }
 
+#if defined(__AVX512F__)
 __m512i avx512_clamp_epi32(__m512i val, __m512i min, __m512i max) {
     return _mm512_max_epi32(min, _mm512_min_epi32(val, max));
 }
+#endif
 
 // ChatGPT
 __m128i mm256_cvtepi32_epi8_avx2(__m256i input) {
