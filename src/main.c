@@ -58,7 +58,7 @@ static void write_to_window_buffer(float* window_values, struct particle_system*
 static void write_to_surface(SDL_Surface* surface, float view_scale, float brightness, float* window_values, uint8_t* window_chars) {
 #if USE_SIMD
     const float view_brightness = view_scale*brightness;
-#if defined(__AVX512F__) && !USE_AVX512
+#if defined(__AVX512F__) && USE_AVX512
     const __m512 view_brightness_f = _mm512_set1_ps(view_brightness);
     size_t i;
     for (i = 0; i < WINDOW_WIDTH*WINDOW_HEIGHT-16; i += AVX512_FLOATS) {

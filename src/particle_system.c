@@ -34,7 +34,9 @@ static uint64_t combination(uint64_t n, uint64_t r)
 static void attract_particles_batched(const struct thread_data* thread_data);
 static void attract_particles_sse_batched(const struct thread_data* thread_data);
 static void attract_particles_avx_batched(const struct thread_data* thread_data);
+#if defined(__AVX512F__)
 static void attract_particles_avx512_batched(const struct thread_data* thread_data);
+#endif
 
 static int thread_func(void* data)
 {
@@ -799,6 +801,8 @@ static void attract_particles_avx_batched(const struct thread_data* thread_data)
 	}
 }
 
+#if defined(__AVX512F__)
+
 static void attract_particles_avx512(struct particle_system *system, const float dt) {
 	const float min_dist = 8*dt;
 	const __m512 min_inv_dist_f = _mm512_set1_ps(1.0f / min_dist);
@@ -946,6 +950,8 @@ static void attract_particles_avx512_batched(const struct thread_data* thread_da
 		vel_y[j] -= dt * force_y / mass[j];
 	}
 }
+
+#endif
 
 static void calculate_average(struct particle_system* system, float* out_avg_x, float* out_avg_y)
 {
