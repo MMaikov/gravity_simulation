@@ -31,6 +31,7 @@ struct thread_data
 	size_t thread_id;
 	struct range simd_range;
 	struct range scalar_range;
+	struct range particle_range;
 
 	SDL_Semaphore* work_start;
 	SDL_Semaphore* work_done;

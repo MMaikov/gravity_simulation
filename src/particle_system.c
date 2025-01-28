@@ -3,6 +3,7 @@
 #include <SDL.h>
 
 #include "config.h"
+#include "random.h"
 
 #if defined(__AVX512F__) && USE_AVX512
 #define SIMD_MEMORY_ALIGNMENT 64
@@ -34,7 +35,7 @@ static uint64_t combination(uint64_t n, uint64_t r)
 	return result;
 }
 
-static int thread_func(void* data)
+static int particle_thread_func(void* data)
 {
 	const struct thread_data* thread_data = data;
 
@@ -46,6 +47,17 @@ static int thread_func(void* data)
 		return -1;
 	}
 
+	const float rotation = 0.001f * SDL_powf((float)thread_data->system->num_particles, 0.666f);
+	SDL_Time time;
+	SDL_GetCurrentTime(&time);
+	pcg32_random_t rng = PCG32_INITIALIZER;
+	pcg32_srandom_r(&rng, time ^ (intptr_t)&SDL_snprintf, (intptr_t)&SDL_CreateCondition ^ 0xDEADBEEF + thread_data->thread_id);
+
+	const float* pos_x = thread_data->system->pos_x;
+	const float* pos_y = thread_data->system->pos_y;
+	float* vel_x = thread_data->system->buffer.vel_x[thread_data->thread_id];
+	float* vel_y = thread_data->system->buffer.vel_y[thread_data->thread_id];
+
 	while (1) {
 		if (SDL_GetAtomicInt(thread_data->exit_flag)) {
 			break;
@@ -56,6 +68,13 @@ static int thread_func(void* data)
 		if (SDL_GetAtomicInt(thread_data->exit_flag)) {
 			break;
 		}
+
+#if PARTICLE_SYSTEM_ADD_RANDOM_FORCE
+		for (size_t i = thread_data->particle_range.start; i < thread_data->particle_range.end; ++i) {
+			vel_x[i] += pos_y[i]*rotation + ((float)pcg32_random_r(&rng) / (float)SDL_MAX_UINT32 * 2.0f - 1.0f);
+			vel_y[i] += -pos_x[i]*rotation + ((float)pcg32_random_r(&rng) / (float)SDL_MAX_UINT32 * 2.0f - 1.0f);
+		}
+#endif
 
 		attract_particles_batched(thread_data);
 
@@ -213,8 +232,6 @@ static bool generate_particle_pairs(struct particle_system* system)
 
 static bool initialize_threads(struct particle_system* system)
 {
-
-#if USE_MULTITHREADING
 	system->work_start = SDL_CreateSemaphore(0);
 	system->work_done = SDL_CreateSemaphore(0);
 
@@ -228,40 +245,32 @@ static bool initialize_threads(struct particle_system* system)
 
 	size_t st = 0;
 	size_t nd = system->pairs_length/system->num_threads;
-#if USE_SIMD
 	size_t st2 = 0;
 	size_t nd2 = system->pairs_simd_length/system->num_threads;
-#endif
+	size_t st3 = 0;
+	size_t nd3 = (system->num_particles+system->num_threads) / system->num_threads;
 	for (size_t i = 0; i < system->num_threads; ++i) {
-#if USE_SIMD
 		const struct range simd_range = {.start = st2, .end = nd2 };
 		const struct range scalar_range = {.start = st, .end = nd };
+		const struct range particle_range = {.start = st3, .end = nd3 };
 		const struct thread_data data = {.system = system, .dt = 1e-6f, .thread_id = i, .simd_range = simd_range,
-			.scalar_range = scalar_range, .work_start = system->work_start,
+			.scalar_range = scalar_range, .particle_range = particle_range, .work_start = system->work_start,
 			.work_done = system->work_done, .exit_flag = &system->exit_flag,
 			.interface = &system->interface};
 		st += system->pairs_length/system->num_threads;
 		nd += system->pairs_length/system->num_threads;
 		st2 += system->pairs_simd_length/system->num_threads;
 		nd2 += system->pairs_simd_length/system->num_threads;
-#else
-		const struct range simd_range = {.start = 0, .end = 0 };
-		const struct range scalar_range = {.start = st, .end = nd };
-		const struct thread_data data = {.system = system, .dt = 1e-6f, .thread_id = i, .scalar_range = scalar_range,
-			.simd_range = simd_range, .work_start = system->work_start,
-			.work_done = system->work_done, .exit_flag = &system->exit_flag,
-			.interface = &system->interface};
-		st += system->pairs_length/system->num_threads;
-		nd += system->pairs_length/system->num_threads;
-#endif
+		st3 += (system->num_particles+system->num_threads) / system->num_threads;
+		nd3 += (system->num_particles+system->num_threads) / system->num_threads;
 
 		system->thread_data[i] = data;
-		system->threads[i] = SDL_CreateThread(thread_func, "ParticleWorker", system->thread_data + i);
+		system->threads[i] = SDL_CreateThread(particle_thread_func, "ParticleWorker", system->thread_data + i);
 		if (system->threads[i] == NULL) {
 			SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to create a SDL thread!\n%s", SDL_GetError());
+			return false;
 		}
 	}
-#endif
 
 	return true;
 }
@@ -332,11 +341,11 @@ bool particle_system_init(struct particle_system* system, const uint32_t num_par
 	if (!generate_particle_pairs(system)) {
 		return false;
 	}
-#endif
 
 	if (!initialize_threads(system)) {
 		return false;
 	}
+#endif
 
 	return true;
 }
@@ -389,15 +398,8 @@ void particle_system_update(struct particle_system* system, float dt)
 	const float amount = 0.7f / system->interface.calculate_standard_distribution(system);
 	system->interface.expand_universe(system, amount);
 
-#if PARTICLE_SYSTEM_ADD_RANDOM_FORCE
-	const float rotation = 0.001f * SDL_powf((float)system->num_particles, 0.666f);
-	for (size_t i = 0; i < system->num_particles; ++i) {
-		system->vel_x[i] += system->pos_y[i]*rotation + ((float)pcg32_random_r(&system->rng) / (float)SDL_MAX_UINT32 * 2.0f - 1.0f);
-		system->vel_y[i] += -system->pos_x[i]*rotation + ((float)pcg32_random_r(&system->rng) / (float)SDL_MAX_UINT32 * 2.0f - 1.0f);
-	}
-#endif
-
 #if USE_MULTITHREADING
+
 	// Signal all threads to start work
 	for (uint32_t i = 0; i < system->num_threads; i++) {
 		SDL_SignalSemaphore(system->work_start);
@@ -407,76 +409,13 @@ void particle_system_update(struct particle_system* system, float dt)
 	for (uint32_t i = 0; i < system->num_threads; i++) {
 		SDL_WaitSemaphore(system->work_done);
 	}
+
 #else
 	system->interface.attract_particles(system, dt);
 #endif
 
 #if USE_MULTITHREADING
 	system->interface.copy_multithreaded_velocities(system);
-#endif
-
-#if USE_MULTITHREADING && 0
-	for (size_t thread = 0; thread < system->num_threads; ++thread) {
-		float* buffer_vel_x = system->buffer.vel_x[thread];
-		float* buffer_vel_y = system->buffer.vel_y[thread];
-		float* vel_x = system->vel_x;
-		float* vel_y = system->vel_y;
-
-#if USE_SIMD
-#if defined(__AVX512F__) && USE_AVX512
-		const __m512 zero = _mm512_setzero_ps();
-		for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
-			const __m512 buffer_vel_x_f = _mm512_loadu_ps(buffer_vel_x + i);
-			const __m512 buffer_vel_y_f = _mm512_loadu_ps(buffer_vel_y + i);
-			__m512 vel_x_f = _mm512_loadu_ps(vel_x + i);
-			__m512 vel_y_f = _mm512_loadu_ps(vel_y + i);
-			vel_x_f = _mm512_add_ps(vel_x_f, buffer_vel_x_f);
-            vel_y_f = _mm512_add_ps(vel_y_f, buffer_vel_y_f);
-			_mm512_storeu_ps(vel_x + i, vel_x_f);
-			_mm512_storeu_ps(vel_y + i, vel_y_f);
-			_mm512_storeu_ps(buffer_vel_x + i, zero);
-			_mm512_storeu_ps(buffer_vel_y + i, zero);
-		}
-#elif defined(__AVX__) && USE_AVX
-		const __m256 zero = _mm256_setzero_ps();
-		for (size_t i = 0; i < system->num_particles; i += AVX_FLOATS) {
-			const __m256 buffer_vel_x_f = _mm256_loadu_ps(buffer_vel_x + i);
-			const __m256 buffer_vel_y_f = _mm256_loadu_ps(buffer_vel_y + i);
-			__m256 vel_x_f = _mm256_loadu_ps(vel_x + i);
-			__m256 vel_y_f = _mm256_loadu_ps(vel_y + i);
-			vel_x_f = _mm256_add_ps(vel_x_f, buffer_vel_x_f);
-			vel_y_f = _mm256_add_ps(vel_y_f, buffer_vel_y_f);
-			_mm256_storeu_ps(vel_x + i, vel_x_f);
-			_mm256_storeu_ps(vel_y + i, vel_y_f);
-			_mm256_storeu_ps(buffer_vel_x + i, zero);
-			_mm256_storeu_ps(buffer_vel_y + i, zero);
-		}
-#elif defined(__SSE__)
-		const __m128 zero = _mm_setzero_ps();
-		for (size_t i = 0; i < system->num_particles; i += SSE_FLOATS) {
-			const __m128 buffer_vel_x_f = _mm_loadu_ps(buffer_vel_x + i);
-			const __m128 buffer_vel_y_f = _mm_loadu_ps(buffer_vel_y + i);
-			__m128 vel_x_f = _mm_loadu_ps(vel_x + i);
-			__m128 vel_y_f = _mm_loadu_ps(vel_y + i);
-			vel_x_f = _mm_add_ps(vel_x_f, buffer_vel_x_f);
-			vel_y_f = _mm_add_ps(vel_y_f, buffer_vel_y_f);
-			_mm_storeu_ps(vel_x + i, vel_x_f);
-			_mm_storeu_ps(vel_y + i, vel_y_f);
-			_mm_storeu_ps(buffer_vel_x + i, zero);
-			_mm_storeu_ps(buffer_vel_y + i, zero);
-		}
-#else
-#error SIMD not supported
-#endif
-#else
-		for (size_t i = 0; i < system->num_particles; ++i) {
-			vel_x[i] += buffer_vel_x[i];
-			vel_y[i] += buffer_vel_y[i];
-			buffer_vel_x[i] = 0.0f;
-			buffer_vel_y[i] = 0.0f;
-		}
-#endif
-	}
 #endif
 
 	system->interface.move_particles(system, dt);

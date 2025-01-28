@@ -252,6 +252,10 @@ int main(const int argc, char** argv)
                     case SDLK_W:
                         brightness *= 0.95f;
                         break;
+                    case SDLK_H:
+                        timer_reset(&update_timer);
+                        timer_reset(&render_timer);
+                        break;
 
                     default: break;
                 }
