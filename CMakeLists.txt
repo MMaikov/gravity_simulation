@@ -7,8 +7,12 @@ set(CMAKE_C_STANDARD 11)
 # Enable C11 features
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Automatically gather all .h files from the include directory
-file(GLOB HEADERS "src/*.h")
+# FFmpeg download URL and paths
+set(FFMPEG_URL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-shared-7.1.zip")
+set(FFMPEG_DIR "${CMAKE_BINARY_DIR}/ffmpeg-n7.1-latest-win64-gpl-shared-7.1")
+set(FFMPEG_INCLUDE_DIR "${FFMPEG_DIR}/include")
+set(FFMPEG_LIBRARY_DIR "${FFMPEG_DIR}/lib")
+set(FFMPEG_BIN_DIR "${FFMPEG_DIR}/bin")
 
 set(SOURCES
         src/main.c
@@ -19,6 +23,8 @@ set(SOURCES
         src/stb_image_write.c
         src/timer.c
         src/util.c
+        src/video_encoder.c
+        src/video_encoder.h
 )
 
 try_compile(HAS_AVX512F
@@ -96,7 +102,7 @@ set(SDL_STATIC ON)           # Enable static library
 # Make SDL3 available
 FetchContent_MakeAvailable(SDL3)
 
-add_executable(GravitySimulator ${SOURCES} ${HEADERS})
+add_executable(GravitySimulator ${SOURCES})
 
 # Add the SDL3 include directory, but add an alias for SDL.h
 target_include_directories(GravitySimulator PRIVATE
@@ -105,5 +111,39 @@ target_include_directories(GravitySimulator PRIVATE
     src
 )
 
-target_link_libraries(GravitySimulator PRIVATE SDL3::SDL3-static)
+target_link_libraries(GravitySimulator SDL3::SDL3)
 set_property( DIRECTORY PROPERTY VS_STARTUP_PROJECT GravitySimulator)
+
+# Download and unzip FFmpeg if it's not already downloaded
+if(WIN32)
+    if(NOT EXISTS ${FFMPEG_DIR})
+        message(STATUS "Downloading FFmpeg precompiled binaries...")
+        file(DOWNLOAD ${FFMPEG_URL} "${CMAKE_BINARY_DIR}/ffmpeg.zip" SHOW_PROGRESS)
+        message(STATUS "Unzipping FFmpeg...")
+        execute_process(COMMAND ${CMAKE_COMMAND} -E tar xzf "${CMAKE_BINARY_DIR}/ffmpeg.zip" WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    endif()
+
+    # Set FFmpeg include and library directories
+    if(NOT EXISTS ${FFMPEG_INCLUDE_DIR} OR NOT EXISTS ${FFMPEG_LIBRARY_DIR})
+        message(FATAL_ERROR "FFmpeg was not properly extracted. Please check the download and extraction process.")
+    endif()
+
+    # Include directories
+    target_include_directories(GravitySimulator PRIVATE ${FFMPEG_INCLUDE_DIR})
+    target_link_directories(GravitySimulator PRIVATE ${FFMPEG_LIBRARY_DIR})
+    target_link_libraries(GravitySimulator avcodec avformat avutil)
+
+    # Copy DLL files from FFmpeg bin/ directory to the executable's directory
+    file(GLOB FFMPEG_DLLS "${FFMPEG_BIN_DIR}/*.dll")
+    add_custom_command(TARGET GravitySimulator POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${FFMPEG_DLLS}
+            $<TARGET_FILE_DIR:GravitySimulator>)
+else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBAV REQUIRED libavformat libavcodec libavutil)
+    target_include_directories(GravitySimulator PRIVATE ${LIBAV_INCLUDE_DIRS})
+    target_link_directories(GravitySimulator PRIVATE ${LIBAV_LIBRARY_DIRS})
+    target_link_libraries(GravitySimulator ${LIBAV_LIBRARIES})
+    add_compile_definitions(${LIBAV_CFLAGS_OTHER})
+endif()

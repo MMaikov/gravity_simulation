@@ -6,6 +6,9 @@
 #define WINDOW_HEIGHT 540
 #define WINDOW_TITLE "Gravity Simulator"
 
+#define VIDEO_OUTPUT 1
+#define RECORDING_FPS 30
+
 #define USE_SIMD 1
 #define USE_AVX 1
 #define USE_AVX512 1

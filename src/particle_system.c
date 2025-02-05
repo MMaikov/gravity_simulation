@@ -248,6 +248,7 @@ static bool initialize_threads(struct particle_system* system)
 	size_t st2 = 0;
 	size_t nd2 = system->pairs_simd_length/system->num_threads;
 	size_t st3 = 0;
+	// TODO: Round the multiple to the cache line, typ. 64 bytes, so to a multiple of 16
 	size_t nd3 = (system->num_particles+system->num_threads) / system->num_threads;
 	for (size_t i = 0; i < system->num_threads; ++i) {
 		const struct range simd_range = {.start = st2, .end = nd2 };

@@ -2,7 +2,7 @@
 
 #include <immintrin.h>
 
-void attract_particles_avx512(struct particle_system *system, const float dt) {
+void attract_particles_avx512(struct particle_system* system, const float dt) {
 	const float min_dist = 8*dt;
 	const __m512 min_inv_dist_f = _mm512_set1_ps(1.0f / min_dist);
 	const __m512 dt_f = _mm512_set1_ps(dt);
@@ -20,17 +20,17 @@ void attract_particles_avx512(struct particle_system *system, const float dt) {
 			const size_t i = n*AVX512_FLOATS;
 			const size_t j = (i + hop) % (use_particles);
 
-			const __m512 pos_x_i = _mm512_loadu_ps(pos_x + i);
-			const __m512 pos_y_i = _mm512_loadu_ps(pos_y + i);
-			__m512 vel_x_i = _mm512_loadu_ps(vel_x + i);
-			__m512 vel_y_i = _mm512_loadu_ps(vel_y + i);
-			const __m512 mass_i = _mm512_loadu_ps(mass + i);
+			const __m512 pos_x_i = _mm512_load_ps(pos_x + i);
+			const __m512 pos_y_i = _mm512_load_ps(pos_y + i);
+			__m512 vel_x_i =       _mm512_load_ps(vel_x + i);
+			__m512 vel_y_i =       _mm512_load_ps(vel_y + i);
+			const __m512 mass_i =  _mm512_load_ps(mass + i);
 
 			const __m512 pos_x_j = _mm512_loadu_ps(pos_x + j);
 			const __m512 pos_y_j = _mm512_loadu_ps(pos_y + j);
-			__m512 vel_x_j = _mm512_loadu_ps(vel_x + j);
-			__m512 vel_y_j = _mm512_loadu_ps(vel_y + j);
-			const __m512 mass_j = _mm512_loadu_ps(mass + j);
+			__m512 vel_x_j =       _mm512_loadu_ps(vel_x + j);
+			__m512 vel_y_j =       _mm512_loadu_ps(vel_y + j);
+			const __m512 mass_j =  _mm512_loadu_ps(mass + j);
 
 			const __m512 pos_x_diff = _mm512_sub_ps(pos_x_i, pos_x_j);
 			const __m512 pos_y_diff = _mm512_sub_ps(pos_y_i, pos_y_j);
@@ -47,8 +47,8 @@ void attract_particles_avx512(struct particle_system *system, const float dt) {
 			vel_x_j = _mm512_fnmadd_ps(dt_f, _mm512_div_ps(force_x, mass_j), vel_x_j);
 			vel_y_j = _mm512_fnmadd_ps(dt_f, _mm512_div_ps(force_y, mass_j), vel_y_j);
 
-			_mm512_storeu_ps(vel_x + i, vel_x_i);
-			_mm512_storeu_ps(vel_y + i, vel_y_i);
+			_mm512_store_ps (vel_x + i, vel_x_i);
+			_mm512_store_ps (vel_y + i, vel_y_i);
 			_mm512_storeu_ps(vel_x + j, vel_x_j);
 			_mm512_storeu_ps(vel_y + j, vel_y_j);
 		}
@@ -96,17 +96,18 @@ void attract_particles_avx512_batched(const struct thread_data* thread_data) {
 		const size_t i = pair.i;
 		const size_t j = pair.j;
 
-		const __m512 pos_x_i = _mm512_loadu_ps(pos_x + i);
-		const __m512 pos_y_i = _mm512_loadu_ps(pos_y + i);
-		__m512 vel_x_i = _mm512_loadu_ps(vel_x + i);
-		__m512 vel_y_i = _mm512_loadu_ps(vel_y + i);
-		const __m512 mass_i = _mm512_loadu_ps(mass + i);
+		// TODO: Testing reveals that offsets by `i` is aligned, but not by `j`
+		const __m512 pos_x_i = _mm512_load_ps(pos_x + i);
+		const __m512 pos_y_i = _mm512_load_ps(pos_y + i);
+		__m512 vel_x_i =       _mm512_load_ps(vel_x + i);
+		__m512 vel_y_i =       _mm512_load_ps(vel_y + i);
+		const __m512 mass_i =  _mm512_load_ps(mass + i);
 
 		const __m512 pos_x_j = _mm512_loadu_ps(pos_x + j);
 		const __m512 pos_y_j = _mm512_loadu_ps(pos_y + j);
-		__m512 vel_x_j = _mm512_loadu_ps(vel_x + j);
-		__m512 vel_y_j = _mm512_loadu_ps(vel_y + j);
-		const __m512 mass_j = _mm512_loadu_ps(mass + j);
+		__m512 vel_x_j =       _mm512_loadu_ps(vel_x + j);
+		__m512 vel_y_j =       _mm512_loadu_ps(vel_y + j);
+		const __m512 mass_j =  _mm512_loadu_ps(mass + j);
 
 		const __m512 pos_x_diff = _mm512_sub_ps(pos_x_i, pos_x_j);
 		const __m512 pos_y_diff = _mm512_sub_ps(pos_y_i, pos_y_j);
@@ -123,8 +124,8 @@ void attract_particles_avx512_batched(const struct thread_data* thread_data) {
 		vel_x_j = _mm512_fnmadd_ps(dt_f, _mm512_div_ps(force_x, mass_j), vel_x_j);
 		vel_y_j = _mm512_fnmadd_ps(dt_f, _mm512_div_ps(force_y, mass_j), vel_y_j);
 
-		_mm512_storeu_ps(vel_x + i, vel_x_i);
-		_mm512_storeu_ps(vel_y + i, vel_y_i);
+		_mm512_store_ps (vel_x + i, vel_x_i);
+		_mm512_store_ps (vel_y + i, vel_y_i);
 		_mm512_storeu_ps(vel_x + j, vel_x_j);
 		_mm512_storeu_ps(vel_y + j, vel_y_j);
 	}
@@ -150,7 +151,7 @@ void attract_particles_avx512_batched(const struct thread_data* thread_data) {
 	}
 }
 
-void move_particles_avx512(struct particle_system *system, const float dt) {
+void move_particles_avx512(struct particle_system* system, const float dt) {
 	const float* vel_x = system->vel_x;
 	const float* vel_y = system->vel_y;
 	float* pos_x = system->pos_x;
@@ -158,15 +159,15 @@ void move_particles_avx512(struct particle_system *system, const float dt) {
 
 	const __m512 dt_f = _mm512_set1_ps(dt);
 	for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
-		const __m512 vel_x_f = _mm512_loadu_ps(vel_x + i);
-		__m512 pos_x_f = _mm512_loadu_ps(pos_x + i);
+		const __m512 vel_x_f = _mm512_load_ps(vel_x + i);
+		__m512 pos_x_f = _mm512_load_ps(pos_x + i);
 		pos_x_f = _mm512_fmadd_ps(dt_f, vel_x_f, pos_x_f);
-		_mm512_storeu_ps(pos_x + i, pos_x_f);
+		_mm512_store_ps(pos_x + i, pos_x_f);
 
-		const __m512 vel_y_f = _mm512_loadu_ps(vel_y + i);
-		__m512 pos_y_f = _mm512_loadu_ps(pos_y + i);
+		const __m512 vel_y_f = _mm512_load_ps(vel_y + i);
+		__m512 pos_y_f = _mm512_load_ps(pos_y + i);
 		pos_y_f = _mm512_fmadd_ps(dt_f, vel_y_f, pos_y_f);
-		_mm512_storeu_ps(pos_y + i, pos_y_f);
+		_mm512_store_ps(pos_y + i, pos_y_f);
 	}
 }
 
@@ -177,10 +178,10 @@ void calculate_average_avx512(struct particle_system* system, float* out_avg_x, 
 	__m512 avg_x_f = _mm512_setzero_ps();
 	__m512 avg_y_f = _mm512_setzero_ps();
 	for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
-		const __m512 pos_x_f = _mm512_loadu_ps(pos_x + i);
+		const __m512 pos_x_f = _mm512_load_ps(pos_x + i);
 		avg_x_f = _mm512_add_ps(avg_x_f, pos_x_f);
 
-		const __m512 pos_y_f = _mm512_loadu_ps(pos_y + i);
+		const __m512 pos_y_f = _mm512_load_ps(pos_y + i);
 		avg_y_f = _mm512_add_ps(avg_y_f, pos_y_f);
 	}
 	(*out_avg_x) = _mm512_reduce_add_ps(avg_x_f) / (float)system->num_particles;
@@ -199,11 +200,11 @@ float calculate_standard_distribution_avx512(struct particle_system* system) {
 	const __m512 x_avg_f = _mm512_set1_ps(x_avg);
 	const __m512 y_avg_f = _mm512_set1_ps(y_avg);
 	for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
-		const __m512 pos_x_f = _mm512_loadu_ps(pos_x + i);
+		const __m512 pos_x_f = _mm512_load_ps(pos_x + i);
 		const __m512 diff_x = _mm512_sub_ps(pos_x_f, x_avg_f);
 		x_dist_f = _mm512_fmadd_ps(diff_x, diff_x, x_dist_f);
 
-		const __m512 pos_y_f = _mm512_loadu_ps(pos_y + i);
+		const __m512 pos_y_f = _mm512_load_ps(pos_y + i);
 		const __m512 diff_y = _mm512_sub_ps(pos_y_f, y_avg_f);
 		y_dist_f = _mm512_fmadd_ps(diff_y, diff_y, y_dist_f);
 	}
@@ -223,13 +224,13 @@ void expand_universe_avx512(struct particle_system* system, const float amount) 
 	const __m512 avg_x_f = _mm512_set1_ps(avg_x);
 	const __m512 avg_y_f = _mm512_set1_ps(avg_y);
 	for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
-		__m512 pos_x_f = _mm512_loadu_ps(pos_x + i);
+		__m512 pos_x_f = _mm512_load_ps(pos_x + i);
 		pos_x_f = _mm512_mul_ps(amount_f, _mm512_sub_ps(pos_x_f, avg_x_f));
-		_mm512_storeu_ps(pos_x + i, pos_x_f);
+		_mm512_store_ps(pos_x + i, pos_x_f);
 
-		__m512 pos_y_f = _mm512_loadu_ps(pos_y + i);
+		__m512 pos_y_f = _mm512_load_ps(pos_y + i);
 		pos_y_f = _mm512_mul_ps(amount_f, _mm512_sub_ps(pos_y_f, avg_y_f));
-		_mm512_storeu_ps(pos_y + i, pos_y_f);
+		_mm512_store_ps(pos_y + i, pos_y_f);
 	}
 }
 
@@ -241,16 +242,16 @@ void copy_multithreaded_velocities_avx512(struct particle_system* system) {
 		float* vel_y = system->vel_y;
 
 		for (size_t i = 0; i < system->num_particles; i += AVX512_FLOATS) {
-			const __m512 buffer_vel_x_f = _mm512_loadu_ps(buffer_vel_x + i);
-			const __m512 buffer_vel_y_f = _mm512_loadu_ps(buffer_vel_y + i);
-			__m512 vel_x_f = _mm512_loadu_ps(vel_x + i);
-			__m512 vel_y_f = _mm512_loadu_ps(vel_y + i);
+			const __m512 buffer_vel_x_f = _mm512_load_ps(buffer_vel_x + i);
+			const __m512 buffer_vel_y_f = _mm512_load_ps(buffer_vel_y + i);
+			__m512 vel_x_f = _mm512_load_ps(vel_x + i);
+			__m512 vel_y_f = _mm512_load_ps(vel_y + i);
 			vel_x_f = _mm512_add_ps(vel_x_f, buffer_vel_x_f);
 			vel_y_f = _mm512_add_ps(vel_y_f, buffer_vel_y_f);
-			_mm512_storeu_ps(vel_x + i, vel_x_f);
-			_mm512_storeu_ps(vel_y + i, vel_y_f);
-			_mm512_storeu_ps(buffer_vel_x + i, _mm512_setzero_ps());
-			_mm512_storeu_ps(buffer_vel_y + i, _mm512_setzero_ps());
+			_mm512_store_ps(vel_x + i, vel_x_f);
+			_mm512_store_ps(vel_y + i, vel_y_f);
+			_mm512_store_ps(buffer_vel_x + i, _mm512_setzero_ps());
+			_mm512_store_ps(buffer_vel_y + i, _mm512_setzero_ps());
 		}
 	}
 }

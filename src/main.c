@@ -7,6 +7,8 @@
 
 #include "simd_util.h"
 
+#include "video_encoder.h"
+
 static void write_to_window_buffer(float* window_values, struct particle_system* particle_system, float view_pos_x, float view_pos_y, float view_scale) {
 
 #if USE_SIMD && defined(__AVX512F__) && USE_AVX512
@@ -175,9 +177,41 @@ int main(const int argc, char** argv)
     bool simulate = false;
     bool record = false;
 
+    uint64_t last_time = SDL_GetTicks();
+    uint64_t current_time = 0;
+
     int32_t num_updates = 1;
     uint32_t img_num = 0;
     float dt = 1e-6f;
+
+    char filename[25] = {0};
+    SDL_Time time;
+    if (!SDL_GetCurrentTime(&time)) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to get current time!\n%s\n", SDL_GetError());
+        goto cleanup5;
+    }
+
+    SDL_DateTime date_time;
+    if (!SDL_TimeToDateTime(time, &date_time, true)) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to get time to datetime!\n%s\n", SDL_GetError());
+        goto cleanup5;
+    }
+
+    int bytes_written = SDL_snprintf(filename, COUNT_OF(filename), "%02d.%02d.%04d-%02d.%02d.%02d.mkv",
+            date_time.day, date_time.month, date_time.year, date_time.hour, date_time.minute, date_time.second);
+    if (bytes_written < 23) {
+        SDL_Log("%d", bytes_written);
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to snprintf or truncated!\n");
+        goto cleanup5;
+    }
+
+    struct video_encoder video_encoder = { 0 };
+    if (0 > video_encoder_init(&video_encoder, filename)) {
+        SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to initialize video encoder!\n");
+        goto cleanup5;
+    }
+
+    SDL_Log("Video encoding initialized");
 
     SDL_Event e;
     bool running = true;
@@ -276,7 +310,7 @@ int main(const int argc, char** argv)
 
         if (!SDL_FillSurfaceRect(surface, &window_rectangle, SDL_MapRGB(pixel_format_details, NULL, 0, 0, 0))) {
             SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to fill surface!\n%s\n", SDL_GetError());
-            goto cleanup5;
+            goto cleanup6;
         }
 
         write_to_window_buffer(window_values, &particle_system, view_pos_x, view_pos_y, view_scale);
@@ -284,6 +318,20 @@ int main(const int argc, char** argv)
         blur5x5(window_values, WINDOW_WIDTH, WINDOW_HEIGHT, tmp_buf);
 
         write_to_surface(surface, view_scale, brightness, window_values, window_chars);
+
+        current_time = SDL_GetTicks();
+        if (record /*&& (current_time - last_time) >= 55*/) {
+            last_time = current_time;
+#if VIDEO_OUTPUT
+            video_encoder_send_frame(&video_encoder, window_chars);
+#else
+            if (!save_image(window_chars, WINDOW_WIDTH, WINDOW_HEIGHT, img_num)) {
+                SDL_Log("Failed to save image!");
+                record = false;
+            }
+            img_num++;
+#endif
+        }
 
         timer_stop(&render_timer);
 
@@ -297,22 +345,17 @@ int main(const int argc, char** argv)
 
         if (!SDL_SetWindowTitle(window, title_buf)) {
             SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to set window title!\n%s\n", SDL_GetError());
-            goto cleanup5;
-        }
-
-        if (record) {
-            if (!save_image(window_chars, WINDOW_WIDTH, WINDOW_HEIGHT, img_num)) {
-                SDL_Log("Failed to save image!");
-                record = false;
-            }
-            img_num++;
+            goto cleanup6;
         }
 
         if (!SDL_UpdateWindowSurface(window)) {
             SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to update window surface!\n%s\n", SDL_GetError());
-            goto cleanup5;
+            goto cleanup6;
         }
     }
+cleanup6:
+    SDL_Log("Finishing video encoding");
+    video_encoder_finish(&video_encoder);
 cleanup5:
     SDL_free(window_values);
     SDL_free(tmp_buf);
