@@ -24,7 +24,7 @@ set(SOURCES
         src/timer.c
         src/util.c
         src/video_encoder.c
-        src/video_encoder.h
+        src/main_scalar.c
 )
 
 try_compile(HAS_AVX512F
@@ -59,11 +59,12 @@ try_compile(HAS_SSE2
 
 if (HAS_AVX512F)
     message(STATUS "AVX512F is supported.")
-    list(APPEND SOURCES src/particle_system_avx512f.c)
+    list(APPEND SOURCES src/particle_system_avx512f.c src/main_avx512.c)
 endif()
 
 if(HAS_AVX2)
     message(STATUS "AVX2 is supported.")
+    list(APPEND SOURCES src/main_avx2.c)
 endif()
 if(HAS_AVX)
     message(STATUS "AVX is supported.")

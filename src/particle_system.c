@@ -276,52 +276,54 @@ static bool initialize_threads(struct particle_system* system)
 	return true;
 }
 
-static void set_interface(struct particle_system* system) {
+static void set_interface(struct particle_system* system)
+{
+	struct interface interface = {
+		.attract_particles = attract_particles_scalar,
+		.attract_particles_batched = attract_particles_scalar_batched,
+		.move_particles = move_particles_scalar,
+		.calculate_average = calculate_average_scalar,
+		.calculate_standard_distribution = calculate_standard_distribution_scalar,
+		.expand_universe = expand_universe_scalar,
+		.copy_multithreaded_velocities = copy_multithreaded_velocities_scalar
+	};
+
 #if USE_SIMD
 #if defined(__AVX512F__) && USE_AVX512
-	const struct interface interface = {
-		.attract_particles = &attract_particles_avx512,
-		.attract_particles_batched = &attract_particles_avx512_batched,
-		.move_particles = &move_particles_avx512,
-		.calculate_average = &calculate_average_avx512,
-		.calculate_standard_distribution = &calculate_standard_distribution_avx512,
-		.expand_universe = &expand_universe_avx512,
-		.copy_multithreaded_velocities = &copy_multithreaded_velocities_avx512,
-	};
+	if (SDL_HasAVX512F()) {
+		interface.attract_particles = attract_particles_avx512;
+		interface.attract_particles_batched = attract_particles_avx512_batched;
+		interface.move_particles = move_particles_avx512;
+		interface.calculate_average = calculate_average_avx512;
+		interface.calculate_standard_distribution = calculate_standard_distribution_avx512;
+		interface.expand_universe = expand_universe_avx512;
+		interface.copy_multithreaded_velocities = copy_multithreaded_velocities_avx512;
+	}
 #elif defined(__AVX__) && USE_AVX
-	const struct interface interface = {
-		.attract_particles = &attract_particles_avx,
-		.attract_particles_batched = &attract_particles_avx_batched,
-		.move_particles = &move_particles_avx,
-		.calculate_average = &calculate_average_avx,
-		.calculate_standard_distribution = &calculate_standard_distribution_avx,
-		.expand_universe = &expand_universe_avx,
-		.copy_multithreaded_velocities = &copy_multithreaded_velocities_avx,
-	};
+	if (SDL_HasAVX()) {
+		interface.attract_particles = attract_particles_avx;
+		interface.attract_particles_batched = attract_particles_avx_batched;
+		interface.move_particles = move_particles_avx;
+		interface.calculate_average = calculate_average_avx;
+		interface.calculate_standard_distribution = calculate_standard_distribution_avx;
+		interface.expand_universe = expand_universe_avx;
+		interface.copy_multithreaded_velocities = copy_multithreaded_velocities_avx;
+	}
 #elif defined(__SSE__)
-	const struct interface interface = {
-		.attract_particles = &attract_particles_sse,
-		.attract_particles_batched = &attract_particles_sse_batched,
-		.move_particles = &move_particles_sse,
-		.calculate_average = &calculate_average_sse,
-		.calculate_standard_distribution = &calculate_standard_distribution_sse,
-		.expand_universe = &expand_universe_sse,
-		.copy_multithreaded_velocities = &copy_multithreaded_velocities_sse,
-	};
+	if (SDL_HasSSE()) {
+		interface.attract_particles = attract_particles_sse;
+		interface.attract_particles_batched = attract_particles_sse_batched;
+		interface.move_particles = move_particles_sse;
+		interface.calculate_average = calculate_average_sse;
+		interface.calculate_standard_distribution = calculate_standard_distribution_sse;
+		interface.expand_universe = expand_universe_sse;
+		interface.copy_multithreaded_velocities = copy_multithreaded_velocities_sse;
+	}
 #else
 #error SIMD not supported
 #endif
-#else
-	const struct interface interface = {
-		.attract_particles = &attract_particles_scalar,
-		.attract_particles_batched = &attract_particles_scalar_batched,
-		.move_particles = &move_particles_scalar,
-		.calculate_average = &calculate_average_scalar,
-		.calculate_standard_distribution = &calculate_standard_distribution_scalar,
-		.expand_universe = &expand_universe_scalar,
-		.copy_multithreaded_velocities = &copy_multithreaded_velocities_scalar,
-	};
 #endif
+
 	system->interface = interface;
 }
 
