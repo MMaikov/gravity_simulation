@@ -73,12 +73,12 @@ int video_encoder_send_frame(struct video_encoder* enc, const uint8_t* grayscale
     av_frame_make_writable(enc->frame);
 
     for (int y = 0; y < WINDOW_HEIGHT; y++) {
-        memcpy(enc->frame->data[0] + y * enc->frame->linesize[0],
+        SDL_memcpy(enc->frame->data[0] + y * enc->frame->linesize[0],
                grayscale_data + y * WINDOW_WIDTH, WINDOW_WIDTH);
     }
     for (int y = 0; y < WINDOW_HEIGHT / 2; y++) {
-        memset(enc->frame->data[1] + y * enc->frame->linesize[1], 128, WINDOW_WIDTH / 2);
-        memset(enc->frame->data[2] + y * enc->frame->linesize[2], 128, WINDOW_WIDTH / 2);
+        SDL_memset(enc->frame->data[1] + y * enc->frame->linesize[1], 128, WINDOW_WIDTH / 2);
+        SDL_memset(enc->frame->data[2] + y * enc->frame->linesize[2], 128, WINDOW_WIDTH / 2);
     }
 
     enc->frame->pts = enc->pts++;

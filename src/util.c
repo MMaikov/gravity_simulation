@@ -275,6 +275,11 @@ void blur5x5(float* values, uint32_t width, uint32_t height, float* tmp_buf)
 #endif
 }
 
+static void stbi_write_func_SDL(void* context, void* data, int size) {
+    SDL_IOStream* ios = (SDL_IOStream*) context;
+    SDL_WriteIO(ios, data, size);
+}
+
 bool save_image(uint8_t* pixels, uint32_t width, uint32_t height, uint32_t name_index) {
 
     if (!SDL_CreateDirectory("img/")) {
@@ -283,7 +288,28 @@ bool save_image(uint8_t* pixels, uint32_t width, uint32_t height, uint32_t name_
     }
 
     char filename[32];
-    (void) SDL_snprintf(filename, COUNT_OF(filename), "img/%07d.jpg", name_index);
+    const int written = SDL_snprintf(filename, COUNT_OF(filename), "img/%07d.jpg", name_index);
+    if (written < 15) {
+        SDL_Log("SDL_snprintf failed or truncated trying to format filename. Written %d bytes, but excepted to write 15 bytes.", written);
+        return false;
+    }
 
-    return stbi_write_jpg(filename, width, height, 1, pixels, 90);
+    SDL_IOStream* ios = SDL_IOFromFile(filename, "wb");
+    if (!ios) {
+        SDL_Log("SDL_IOFromFile failed.\n%s", SDL_GetError());
+        return false;
+    }
+
+    const bool status = stbi_write_jpg_to_func(stbi_write_func_SDL, ios, width, height, 1, pixels, 90);
+    if (!status) {
+        SDL_Log("stbi_write_jpg_to_func failed.");
+        if (!SDL_CloseIO(ios)) {
+            SDL_Log("SDL_CloseIO failed.\n%s", SDL_GetError());
+        }
+        return false;
+    }
+
+    SDL_CloseIO(ios);
+
+    return true;
 }
