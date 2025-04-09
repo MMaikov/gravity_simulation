@@ -48,6 +48,7 @@ int main(const int argc, char** argv)
 {
     uint32_t particle_count = NUM_PARTICLES;
 
+    // TODO: Proper command line argument parsing
     if (argc > 1) {
         if (SDL_strncmp("--particles", argv[1], SDL_strlen(argv[1])) == 0) {
             if (argc > 2) {
@@ -143,13 +144,8 @@ int main(const int argc, char** argv)
         goto cleanup5;
     }
 
+    bool is_video_initialized = false;
     struct video_encoder video_encoder = { 0 };
-    if (0 > video_encoder_init(&video_encoder, filename)) {
-        SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to initialize video encoder!\n");
-        goto cleanup5;
-    }
-
-    SDL_Log("Video encoding initialized");
 
     SDL_Event e;
     bool running = true;
@@ -261,8 +257,18 @@ int main(const int argc, char** argv)
         if (record /*&& (current_time - last_time) >= 55*/) {
             last_time = current_time;
 #if VIDEO_OUTPUT
+            if (!is_video_initialized) {
+                if (0 > video_encoder_init(&video_encoder, filename)) {
+                    SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to initialize video encoder!\n");
+                    goto cleanup5;
+                }
+
+                SDL_Log("Video encoding initialized");
+                is_video_initialized = true;
+            }
             video_encoder_send_frame(&video_encoder, window_chars);
 #else
+            // TODO: Multithreaded image saving
             if (!save_image(window_chars, WINDOW_WIDTH, WINDOW_HEIGHT, img_num)) {
                 SDL_Log("Failed to save image!");
                 record = false;
@@ -292,8 +298,10 @@ int main(const int argc, char** argv)
         }
     }
 cleanup6:
-    SDL_Log("Finishing video encoding");
-    video_encoder_finish(&video_encoder);
+    if (is_video_initialized) {
+        SDL_Log("Finishing video encoding");
+        video_encoder_finish(&video_encoder);
+    }
 cleanup5:
     SDL_free(window_values);
     SDL_free(tmp_buf);

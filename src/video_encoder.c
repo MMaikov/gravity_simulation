@@ -3,13 +3,15 @@
 #include "config.h"
 
 #include <SDL.h>
+#include <libavutil/opt.h>
 
 int video_encoder_init(struct video_encoder* enc, const char* filename) {
+
     av_log_set_level(AV_LOG_ERROR);
 
-    avformat_alloc_output_context2(&enc->format_ctx, NULL, "matroska", filename);
-    if (!enc->format_ctx) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not allocate format context\n");
+    int r = avformat_alloc_output_context2(&enc->format_ctx, NULL, "matroska", filename);
+    if (r < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not allocate format context\n%s\n", av_err2str(r));
         return -1;
     }
 
@@ -26,6 +28,11 @@ int video_encoder_init(struct video_encoder* enc, const char* filename) {
     }
 
     enc->codec_ctx = avcodec_alloc_context3(codec);
+    if (!enc->codec_ctx) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not allocate codec context\n");
+        return -1;
+    }
+
     enc->codec_ctx->codec_id = AV_CODEC_ID_H264;
     enc->codec_ctx->width = WINDOW_WIDTH;
     enc->codec_ctx->height = WINDOW_HEIGHT;
@@ -34,38 +41,63 @@ int video_encoder_init(struct video_encoder* enc, const char* filename) {
     enc->codec_ctx->framerate = (AVRational){RECORDING_FPS, 1};
     enc->codec_ctx->gop_size = 12;
     enc->codec_ctx->max_b_frames = 1;
-    enc->codec_ctx->extradata = av_mallocz(32);
     enc->codec_ctx->extradata_size = 32;
-    av_opt_set(enc->codec_ctx->priv_data, "preset", "veryfast", 0);
+    enc->codec_ctx->extradata = av_mallocz(32);
+    if (!enc->codec_ctx->extradata) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not allocate codec context's extradata buffer\n");
+        return -1;
+    }
+    r = av_opt_set(enc->codec_ctx->priv_data, "preset", "veryfast", 0);
+    if (r != 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not set preset\n%s\n", av_err2str(r));
+    }
 
-    if (avcodec_open2(enc->codec_ctx, codec, NULL) < 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not open codec\n");
+    r = avcodec_open2(enc->codec_ctx, codec, NULL);
+    if (r < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not open codec\n%s\n", av_err2str(r));
         return -1;
     }
 
-    avcodec_parameters_from_context(enc->stream->codecpar, enc->codec_ctx);
+    r = avcodec_parameters_from_context(enc->stream->codecpar, enc->codec_ctx);
+    if (r < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Could not copy codec parameters\n%s\n", av_err2str(r));
+        return -1;
+    }
     enc->stream->time_base = enc->codec_ctx->time_base;
 
     if (!(enc->format_ctx->oformat->flags & AVFMT_NOFILE)) {
-        if (avio_open(&enc->format_ctx->pb, filename, AVIO_FLAG_WRITE) < 0) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not open output file\n");
+        if ((r = avio_open(&enc->format_ctx->pb, filename, AVIO_FLAG_WRITE)) < 0) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not open output file\n%s\n", av_err2str(r));
             return -1;
         }
     }
 
-    if (avformat_write_header(enc->format_ctx, NULL) < 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error writing header\n");
+    if ((r = avformat_write_header(enc->format_ctx, NULL)) < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error writing header\n%s\n", av_err2str(r));
         return -1;
     }
 
     enc->frame = av_frame_alloc();
+    if (!enc->frame) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Could not allocate frame buffer\n");
+        return -1;
+    }
     enc->frame->format = enc->codec_ctx->pix_fmt;
     enc->frame->width = WINDOW_WIDTH;
     enc->frame->height = WINDOW_HEIGHT;
-    av_frame_get_buffer(enc->frame, 0);
+    r = av_frame_get_buffer(enc->frame, 0);
+    if (r < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Could not allocate frame buffer\n%s\n", av_err2str(r));
+        return -1;
+    }
 
     enc->packet = av_packet_alloc();
+    if (!enc->packet) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Could not allocate packet buffer\n");
+        return -1;
+    }
     enc->pts = 0;
+
     return 0;
 }
 
