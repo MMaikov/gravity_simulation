@@ -102,7 +102,11 @@ int video_encoder_init(struct video_encoder* enc, const char* filename) {
 }
 
 int video_encoder_send_frame(struct video_encoder* enc, const uint8_t* grayscale_data) {
-    av_frame_make_writable(enc->frame);
+    int r = av_frame_make_writable(enc->frame);
+    if (r < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error making frame writable\n%s\n", av_err2str(r));
+        return -1;
+    }
 
     for (int y = 0; y < WINDOW_HEIGHT; y++) {
         SDL_memcpy(enc->frame->data[0] + y * enc->frame->linesize[0],
@@ -115,33 +119,63 @@ int video_encoder_send_frame(struct video_encoder* enc, const uint8_t* grayscale
 
     enc->frame->pts = enc->pts++;
 
-    if (avcodec_send_frame(enc->codec_ctx, enc->frame) < 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error sending frame to encoder\n");
+    if ((r=avcodec_send_frame(enc->codec_ctx, enc->frame)) < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error sending frame to encoder\n%s\n", av_err2str(r));
         return -1;
     }
 
-    while (avcodec_receive_packet(enc->codec_ctx, enc->packet) == 0) {
+    while ((r=avcodec_receive_packet(enc->codec_ctx, enc->packet)) == 0) {
         enc->packet->stream_index = enc->stream->index;
         av_packet_rescale_ts(enc->packet, enc->codec_ctx->time_base, enc->stream->time_base);
-        av_interleaved_write_frame(enc->format_ctx, enc->packet);
+        r = av_interleaved_write_frame(enc->format_ctx, enc->packet);
+        if (r < 0) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error writing frame to encoder.\n%s\n", av_err2str(r));
+            return -1;
+        }
         av_packet_unref(enc->packet);
     }
+
+    if (r < 0 && r != AVERROR_EOF && r != AVERROR(EAGAIN)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error reading codec packet.\n%s\n", av_err2str(r));
+        return -1;
+    }
+
     return 0;
 }
 
 void video_encoder_finish(struct video_encoder* enc) {
-    avcodec_send_frame(enc->codec_ctx, NULL);
-    while (avcodec_receive_packet(enc->codec_ctx, enc->packet) == 0) {
+    int r = avcodec_send_frame(enc->codec_ctx, NULL);
+    if (r < 0 && r != AVERROR_EOF) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error flushing video stream.\n%s\n", av_err2str(r));
+        return;
+    }
+
+    while ((r = avcodec_receive_packet(enc->codec_ctx, enc->packet)) == 0) {
         enc->packet->stream_index = enc->stream->index;
         av_packet_rescale_ts(enc->packet, enc->codec_ctx->time_base, enc->stream->time_base);
-        av_interleaved_write_frame(enc->format_ctx, enc->packet);
+        r = av_interleaved_write_frame(enc->format_ctx, enc->packet);
+        if (r < 0) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error writing frame to encoder.\n%s\n", av_err2str(r));
+            return;
+        }
         av_packet_unref(enc->packet);
     }
 
-    av_write_trailer(enc->format_ctx);
+    if (r < 0 && r != AVERROR_EOF) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error reading codec packet.\n%s\n", av_err2str(r));
+        return;
+    }
+
+    if ((r = av_write_trailer(enc->format_ctx)) < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error writing stream trailer.\n%s\n", av_err2str(r));
+        return;
+    }
     avcodec_free_context(&enc->codec_ctx);
     av_frame_free(&enc->frame);
     av_packet_free(&enc->packet);
-    avio_close(enc->format_ctx->pb);
+    if ((r = avio_close(enc->format_ctx->pb)) < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error closing video stream.\n%s\n", av_err2str(r));
+        return;
+    }
     avformat_free_context(enc->format_ctx);
 }
