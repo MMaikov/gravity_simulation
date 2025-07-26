@@ -27,9 +27,18 @@ void write_to_window_buffer_avx512(float* window_values, struct particle_system*
         y = avx512_clamp_epi32(y, _mm512_setzero_epi32(), _mm512_set1_epi32(WINDOW_HEIGHT-1));
 
         const __m512i index = _mm512_add_epi32(x, _mm512_mullo_epi32(y, _mm512_set1_epi32(WINDOW_WIDTH)));
+
+#if AVX512_AVOID_GATHERSCATTER
+        uint32_t index_32[AVX512_FLOATS];
+        _mm512_storeu_si512(index_32, index);
+        for (int k = 0; k < AVX512_FLOATS; k++) {
+            window_values[index_32[k]] += 1.0f;
+        }
+#else
         __m512 window_values_f = _mm512_i32gather_ps(index, window_values, 4);
         window_values_f = _mm512_add_ps(window_values_f, _mm512_set1_ps(1.0f));
         _mm512_i32scatter_ps(window_values, index, window_values_f, 4);
+#endif
     }
 
     for (; i < particle_system->num_particles; i++) {

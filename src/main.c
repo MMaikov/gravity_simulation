@@ -31,6 +31,7 @@ static void init_interface()
 #if defined(__AVX2__) && USE_AVX
     if (SDL_HasAVX2()) {
         write_to_surface = write_to_surface_avx2;
+        write_to_window_buffer = write_to_window_buffer_avx2;
     }
 #endif
 
@@ -147,6 +148,8 @@ int main(const int argc, char** argv)
     bool is_video_initialized = false;
     struct video_encoder video_encoder = { 0 };
 
+    struct timer t = {0};
+
     SDL_Event e;
     bool running = true;
     while (running) {
@@ -223,6 +226,7 @@ int main(const int argc, char** argv)
                     case SDLK_H:
                         timer_reset(&update_timer);
                         timer_reset(&render_timer);
+                        timer_reset(&t);
                         break;
 
                     default: break;
@@ -247,7 +251,13 @@ int main(const int argc, char** argv)
             goto cleanup6;
         }
 
+        timer_start(&t);
         write_to_window_buffer(window_values, &particle_system, view_pos_x, view_pos_y, view_scale);
+        timer_stop(&t);
+
+        char bufa[20];
+        timer_elapsed_str(&t, 20, bufa);
+        SDL_Log("Write to window buffer took %s\n", bufa);
 
         blur5x5(window_values, WINDOW_WIDTH, WINDOW_HEIGHT, tmp_buf);
 

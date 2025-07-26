@@ -24,5 +24,7 @@
 
 #define PARTICLE_SYSTEM_ADD_RANDOM_FORCE 1
 
+#define AVX512_AVOID_GATHERSCATTER 1
+
 // from Google's Chromium project
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x]))))) //NOLINT

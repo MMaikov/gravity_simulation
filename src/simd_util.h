@@ -11,4 +11,8 @@ __m512i avx512_clamp_epi32(__m512i val, __m512i min, __m512i max);
 __m128i mm256_cvtepi32_epi8_avx2(__m256i input);
 #endif
 
+#if defined(__AVX2__)
+__m256i avx256_clamp_epi32(__m256i val, __m256i min, __m256i max);
+#endif
+
 #endif //SIMD_UTIL_H
