@@ -53,7 +53,6 @@ struct vec2 {
     float y;
 };
 
-typedef uint8_t AppStateFlags_t;
 typedef enum {
     APP_FLAG_NONE             = 0,
     APP_FLAG_VIDEO_INITIALIZED = (1 << 0),
@@ -77,7 +76,7 @@ struct simulation_state {
     float* tmp_buf;
     uint8_t* window_chars;
 
-    AppStateFlags_t flags;
+    uint8_t flags;
 
     struct vec2 view_pos;
     float view_scale;
@@ -364,6 +363,7 @@ static SDL_AppResult handle_key_down(struct simulation_state* state, const SDL_K
     return SDL_APP_CONTINUE;
 }
 
+// ReSharper disable once CppParameterMayBeConstPtrOrRef
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
     struct simulation_state* state = appstate;
 
