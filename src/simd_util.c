@@ -29,3 +29,9 @@ __m128i mm256_cvtepi32_epi8_avx2(__m256i input) {
     return packed8;
 }
 #endif
+
+#if defined(__AVX2__)
+__m256i avx256_clamp_epi32(__m256i val, __m256i min, __m256i max) {
+    return _mm256_max_epi32(min, _mm256_min_epi32(val, max));
+}
+#endif

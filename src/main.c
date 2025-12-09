@@ -34,6 +34,7 @@ static void init_interface()
 #if defined(__AVX2__) && USE_AVX
     if (SDL_HasAVX2()) {
         write_to_surface = write_to_surface_avx2;
+        write_to_window_buffer = write_to_window_buffer_avx2;
     }
 #endif
 
