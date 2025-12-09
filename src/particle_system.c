@@ -392,12 +392,9 @@ void particle_system_update(struct particle_system* system, float dt)
 		SDL_WaitSemaphore(system->work_done);
 	}
 
+	system->interface.copy_multithreaded_velocities(system);
 #else
 	system->interface.attract_particles(system, dt);
-#endif
-
-#if USE_MULTITHREADING
-	system->interface.copy_multithreaded_velocities(system);
 #endif
 
 	system->interface.move_particles(system, dt);
