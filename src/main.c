@@ -87,13 +87,14 @@ struct simulation_state {
     uint64_t last_time;
     uint64_t current_time;
 
-    int32_t num_updates;
+    uint32_t num_updates;
     uint32_t img_num;
     float dt;
 
     char filename[25];
 };
 
+// ReSharper disable once CppParameterMayBeConst
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
 
     struct simulation_state* state = SDL_calloc(1, sizeof(*state));
@@ -210,7 +211,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
     if (state->flags & APP_FLAG_SIMULATE) {
         timer_start(&state->update_timer);
-        for (int32_t i = 0; i < state->num_updates; i++) {
+        for (uint32_t i = 0; i < state->num_updates; i++) {
             particle_system_update(&state->particle_system, state->dt);
         }
         timer_stop(&state->update_timer);
