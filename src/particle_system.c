@@ -5,35 +5,10 @@
 #include "config.h"
 #include "random.h"
 
-#if defined(__AVX512F__) && USE_AVX512
-#define SIMD_MEMORY_ALIGNMENT 64
-#elif defined(__AVX__) && USE_AVX
-#define SIMD_MEMORY_ALIGNMENT 32
-#elif defined(__SSE__)
-#define SIMD_MEMORY_ALIGNMENT 16
-#else
-#error SIMD not supported
-#endif
-
 #include "particle_system_scalar.h"
 #include "particle_system_sse.h"
 #include "particle_system_avx.h"
 #include "particle_system_avx512f.h"
-
-static uint64_t combination(uint64_t n, uint64_t r)
-{
-	if (r > (n-r)) {
-		r = n - r;
-	}
-
-	uint64_t result = 1;
-
-	for (size_t i = 0; i < r; ++i) {
-		result = result * (n - i) / (i + 1);
-	}
-
-	return result;
-}
 
 static int particle_thread_func(void* data)
 {
@@ -88,12 +63,16 @@ static bool allocate_memory(struct particle_system* system, const uint32_t num_p
 {
 	system->num_particles = num_particles;
 
+	// Align data to cache lines to avoid false sharing.
+	// Assumption: cache lines are always bigger than the SIMD alignment requirements.
+	const int alignment = SDL_GetCPUCacheLineSize();
+
 	const size_t PARTICLES_BYTELENGTH = (system->num_particles + AVX512_FLOATS) * sizeof(float);
-	system->pos_x  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
-	system->pos_y  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
-	system->vel_x  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
-	system->vel_y  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
-	system->mass   = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
+	system->pos_x  = SDL_aligned_alloc(alignment, PARTICLES_BYTELENGTH);
+	system->pos_y  = SDL_aligned_alloc(alignment, PARTICLES_BYTELENGTH);
+	system->vel_x  = SDL_aligned_alloc(alignment, PARTICLES_BYTELENGTH);
+	system->vel_y  = SDL_aligned_alloc(alignment, PARTICLES_BYTELENGTH);
+	system->mass   = SDL_aligned_alloc(alignment, PARTICLES_BYTELENGTH);
 
 	if (system->pos_x  == NULL ||
 		system->pos_y  == NULL ||
@@ -110,8 +89,8 @@ static bool allocate_memory(struct particle_system* system, const uint32_t num_p
 		float** vel_x = system->buffer.vel_x + i;
 		float** vel_y = system->buffer.vel_y + i;
 
-		(*vel_x)  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
-		(*vel_y)  = SDL_aligned_alloc(SIMD_MEMORY_ALIGNMENT, PARTICLES_BYTELENGTH);
+		(*vel_x)  = SDL_aligned_alloc(alignment, PARTICLES_BYTELENGTH);
+		(*vel_y)  = SDL_aligned_alloc(alignment, PARTICLES_BYTELENGTH);
 		if ((*vel_x) == NULL || (*vel_y) == NULL) {
 			SDL_aligned_free(system->pos_x);
 			SDL_aligned_free(system->pos_y);
