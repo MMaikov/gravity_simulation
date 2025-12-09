@@ -1,5 +1,8 @@
 #include <SDL.h>
 
+#define SDL_MAIN_USE_CALLBACKS
+#include <SDL3/SDL_main.h>
+
 #include "config.h"
 #include "particle_system.h"
 #include "timer.h"
@@ -44,8 +47,61 @@ static void init_interface()
 #endif
 }
 
-int main(const int argc, char** argv)
-{
+struct vec2 {
+    float x;
+    float y;
+};
+
+typedef uint8_t AppStateFlags_t;
+typedef enum {
+    APP_FLAG_NONE             = 0,
+    APP_FLAG_VIDEO_INITIALIZED = (1 << 0),
+    APP_FLAG_SIMULATE          = (1 << 1),
+    APP_FLAG_RECORD            = (1 << 2)
+} AppFlags;
+
+struct simulation_state {
+    SDL_Window* window;
+    SDL_Surface* surface;
+
+    SDL_Rect window_rectangle;
+    const SDL_PixelFormatDetails* pixel_format_details;
+
+    struct particle_system particle_system;
+    struct video_encoder video_encoder;
+    struct timer update_timer;
+    struct timer render_timer;
+
+    float* window_values;
+    float* tmp_buf;
+    uint8_t* window_chars;
+
+    AppStateFlags_t flags;
+
+    struct vec2 view_pos;
+    float view_scale;
+    float brightness;
+
+    struct vec2 mouse_pos;
+
+    uint64_t last_time;
+    uint64_t current_time;
+
+    int32_t num_updates;
+    uint32_t img_num;
+    float dt;
+
+    char filename[25];
+};
+
+SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
+
+    struct simulation_state* state = SDL_calloc(1, sizeof(*state));
+    if (state == NULL) {
+        return SDL_APP_FAILURE;
+    }
+    *appstate = state;
+
     uint32_t particle_count = NUM_PARTICLES;
 
     // TODO: Proper command line argument parsing
@@ -61,257 +117,296 @@ int main(const int argc, char** argv)
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to initialize SDL!\n%s\n", SDL_GetError());
-        goto cleanup1;
+        return SDL_APP_FAILURE;
     }
 
     init_interface();
 
-    SDL_Window* window = SDL_CreateWindow(WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, 0);
-    if (window == NULL) {
+    state->window = SDL_CreateWindow(WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, 0);
+    if (state->window == NULL) {
         SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to create SDL Window!\n%s\n", SDL_GetError());
-        goto cleanup2;
+        return SDL_APP_FAILURE;
     }
 
-    struct particle_system particle_system = { 0 };
-    if (!particle_system_init(&particle_system, particle_count)) {
-        goto cleanup3;
+    if (!particle_system_init(&state->particle_system, particle_count)) {
+        SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to initialize particle_system!\n%s\n", SDL_GetError());
+        return SDL_APP_FAILURE;
     }
 
-    SDL_Log("Initialized particle system with %d particles", particle_system.num_particles);
-    SDL_Log("Number of threads: %d", particle_system.num_threads);
+    SDL_Log("Initialized particle system with %d particles", state->particle_system.num_particles);
+    SDL_Log("Number of threads: %d", state->particle_system.num_threads);
 
-    SDL_Surface* surface = SDL_GetWindowSurface(window);
-    if (surface == NULL) {
+    state->surface = SDL_GetWindowSurface(state->window);
+    if (state->surface == NULL) {
         SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to get surface!\n%s\n", SDL_GetError());
-        goto cleanup4;
+        return SDL_APP_FAILURE;
     }
 
-    float* window_values = SDL_calloc(WINDOW_WIDTH * WINDOW_HEIGHT, sizeof(*window_values));
-    float* tmp_buf = SDL_calloc(WINDOW_WIDTH * WINDOW_HEIGHT, sizeof(*tmp_buf));
-    uint8_t* window_chars = SDL_calloc(WINDOW_WIDTH * WINDOW_HEIGHT, sizeof(*window_chars));
+    state->window_values = SDL_calloc(WINDOW_WIDTH * WINDOW_HEIGHT, sizeof(*state->window_values));
+    state->tmp_buf = SDL_calloc(WINDOW_WIDTH * WINDOW_HEIGHT, sizeof(*state->tmp_buf));
+    state->window_chars = SDL_calloc(WINDOW_WIDTH * WINDOW_HEIGHT, sizeof(*state->window_chars));
 
-    if (window_values == NULL || tmp_buf == NULL || window_chars == NULL) {
+    if (state->window_values == NULL || state->tmp_buf == NULL || state->window_chars == NULL) {
         SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to allocate memory!\n%s\n", SDL_GetError());
-        goto cleanup4;
+        return SDL_APP_FAILURE;
     }
 
-    const SDL_Rect window_rectangle = { .x = 0, .y = 0, .w = WINDOW_WIDTH, .h = WINDOW_HEIGHT };
-    const SDL_PixelFormatDetails* pixel_format_details = SDL_GetPixelFormatDetails(surface->format);
-    if (pixel_format_details == NULL) {
+    // Perhaps use SDL_GetWindowPosition and SDL_GetWindowSizeInPixels
+    state->window_rectangle.x = 0;
+    state->window_rectangle.y = 0;
+    state->window_rectangle.w = WINDOW_WIDTH;
+    state->window_rectangle.h = WINDOW_HEIGHT;
+
+    state->pixel_format_details = SDL_GetPixelFormatDetails(state->surface->format);
+    if (state->pixel_format_details == NULL) {
         SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to get pixel format details!\n%s\n", SDL_GetError());
-        goto cleanup5;
+        return SDL_APP_FAILURE;
     }
 
-    float view_pos_x = 0;
-    float view_pos_y = 0;
-    float view_scale = WINDOW_HEIGHT / 2.0f;
-    float brightness = 10000.0f / (float)particle_system.num_particles;
+    state->view_pos.x = 0.0f;
+    state->view_pos.y = 0.0f;
+    state->view_scale = WINDOW_HEIGHT / 2.0f;
+    state->brightness = 10000.0f / (float)state->particle_system.num_particles;
 
-    struct timer update_timer = {0};
-    struct timer render_timer = {0};
+    SDL_GetMouseState(&state->mouse_pos.x, &state->mouse_pos.y);
 
-    float mouse_pos_x = 0.0f;
-    float mouse_pos_y = 0.0f;
+    state->last_time = SDL_GetTicks();
+    state->current_time = 0;
 
-    bool simulate = false;
-    bool record = false;
+    state->num_updates = 1;
+    state->img_num = 0;
+    state->dt = 1e-6f;
 
-    uint64_t last_time = SDL_GetTicks();
-    uint64_t current_time = 0;
-
-    int32_t num_updates = 1;
-    uint32_t img_num = 0;
-    float dt = 1e-6f;
-
-    char filename[25] = {0};
     SDL_Time time;
     if (!SDL_GetCurrentTime(&time)) {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to get current time!\n%s\n", SDL_GetError());
-        goto cleanup5;
+        return SDL_APP_FAILURE;
     }
 
     SDL_DateTime date_time;
     if (!SDL_TimeToDateTime(time, &date_time, true)) {
         SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to get time to datetime!\n%s\n", SDL_GetError());
-        goto cleanup5;
+        return SDL_APP_FAILURE;
     }
 
-    int bytes_written = SDL_snprintf(filename, COUNT_OF(filename), "%02d.%02d.%04d-%02d.%02d.%02d.mkv",
-            date_time.day, date_time.month, date_time.year, date_time.hour, date_time.minute, date_time.second);
+    const int bytes_written = SDL_snprintf(state->filename, COUNT_OF(state->filename),
+        "%02d.%02d.%04d-%02d.%02d.%02d.mkv", date_time.day, date_time.month, date_time.year,
+            date_time.hour, date_time.minute, date_time.second);
     if (bytes_written < 23) {
-        SDL_Log("%d", bytes_written);
-        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to snprintf or truncated!\n");
-        goto cleanup5;
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to snprintf or truncated!\n"
+                                             "Wrote %d bytes, but expected 23 bytes to be written (excl. \\0)\n",
+                                             bytes_written);
+        return SDL_APP_FAILURE;
     }
 
-    bool is_video_initialized = false;
-    struct video_encoder video_encoder = { 0 };
+    return SDL_APP_CONTINUE;
+}
 
-    SDL_Event e;
-    bool running = true;
-    while (running) {
-        (void) SDL_GetMouseState(&mouse_pos_x, &mouse_pos_y);
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT) {
-                running = false;
-            } else if (e.type == SDL_EVENT_MOUSE_WHEEL) {
-                const float zoom_factor = (e.wheel.y < 0) ? 0.95f : 1.05f;
+SDL_AppResult SDL_AppIterate(void *appstate) {
 
-                float change_x = mouse_pos_x - WINDOW_WIDTH / 2.0f;
-                float change_y = mouse_pos_y - WINDOW_HEIGHT / 2.0f;
-                view_pos_x = view_pos_x + change_x / view_scale;
-                view_pos_y = view_pos_y + change_y / view_scale;
-                view_scale *= zoom_factor;
-                change_x = mouse_pos_x - WINDOW_WIDTH / 2.0f;
-                change_y = mouse_pos_y - WINDOW_HEIGHT / 2.0f;
-                view_pos_x = view_pos_x - change_x / view_scale;
-                view_pos_y = view_pos_y - change_y / view_scale;
-            } else if (e.type == SDL_EVENT_KEY_DOWN) {
-                switch (e.key.key) {
-                    case SDLK_ESCAPE:
-                        running = false;
-                        break;
-                    case SDLK_SPACE:
-                        simulate ^= true;
-                        break;
-                    case SDLK_LEFT:
-                        view_pos_x -= WINDOW_HEIGHT / view_scale * 0.01f;
-                        break;
-                    case SDLK_RIGHT:
-                        view_pos_x += WINDOW_WIDTH / view_scale * 0.01f;
-                        break;
-                    case SDLK_UP:
-                        view_pos_y -= WINDOW_HEIGHT / view_scale * 0.01f;
-                        break;
-                    case SDLK_DOWN:
-                        view_pos_y += WINDOW_HEIGHT / view_scale * 0.01f;
-                        break;
-                    case SDLK_R:
-                        particle_system_reset(&particle_system);
-                        timer_reset(&update_timer);
-                        simulate = false;
-                        break;
-                    case SDLK_S:
-                        simulate = true;
-                        record = true;
-                        break;
-                    case SDLK_O:
-                        view_scale *= 0.98f;
-                        break;
-                    case SDLK_I:
-                        view_scale *= 1.02f;
-                        break;
-                    case SDLK_F:
-                        num_updates += 1;
-                        break;
-                    case SDLK_G:
-                        num_updates -= 1;
-                        num_updates = SDL_max(num_updates, 0);
-                        break;
-                    case SDLK_V:
-                        dt *= 1.1f;
-                        break;
-                    case SDLK_B:
-                        dt *= 1.0f / 1.1f;
-                        break;
-                    case SDLK_E:
-                        brightness *= 1.05f;
-                        break;
-                    case SDLK_W:
-                        brightness *= 0.95f;
-                        break;
-                    case SDLK_H:
-                        timer_reset(&update_timer);
-                        timer_reset(&render_timer);
-                        break;
+    struct simulation_state* state = appstate;
 
-                    default: break;
-                }
-            }
+    SDL_GetMouseState(&state->mouse_pos.x, &state->mouse_pos.y);
+
+    if (state->flags & APP_FLAG_SIMULATE) {
+        timer_start(&state->update_timer);
+        for (int32_t i = 0; i < state->num_updates; i++) {
+            particle_system_update(&state->particle_system, state->dt);
         }
+        timer_stop(&state->update_timer);
+    } else {
+        timer_reset(&state->update_timer);
+    }
 
-        if (simulate) {
-            timer_start(&update_timer);
-            for (int32_t i = 0; i < num_updates; i++) {
-                particle_system_update(&particle_system, dt);
-            }
-            timer_stop(&update_timer);
-        } else {
-            timer_reset(&update_timer);
-        }
+    timer_start(&state->render_timer);
 
-        timer_start(&render_timer);
+    if (!SDL_FillSurfaceRect(state->surface, &state->window_rectangle,
+        SDL_MapRGB(state->pixel_format_details, NULL, 0, 0, 0))) {
+        SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to fill surface!\n%s\n", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
 
-        if (!SDL_FillSurfaceRect(surface, &window_rectangle, SDL_MapRGB(pixel_format_details, NULL, 0, 0, 0))) {
-            SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to fill surface!\n%s\n", SDL_GetError());
-            goto cleanup6;
-        }
+    write_to_window_buffer(state->window_values, &state->particle_system,
+        state->view_pos.x, state->view_pos.y, state->view_scale);
 
-        write_to_window_buffer(window_values, &particle_system, view_pos_x, view_pos_y, view_scale);
+    blur5x5(state->window_values, WINDOW_WIDTH, WINDOW_HEIGHT, state->tmp_buf);
 
-        blur5x5(window_values, WINDOW_WIDTH, WINDOW_HEIGHT, tmp_buf);
+    write_to_surface(state->surface, state->view_scale, state->brightness, state->window_values, state->window_chars);
 
-        write_to_surface(surface, view_scale, brightness, window_values, window_chars);
-
-        current_time = SDL_GetTicks();
-        if (record /*&& (current_time - last_time) >= 55*/) {
-            last_time = current_time;
+    state->current_time = SDL_GetTicks();
+    if (state->flags & APP_FLAG_RECORD) {
+        state->last_time = state->current_time;
 #if VIDEO_OUTPUT
-            if (!is_video_initialized) {
-                if (0 > video_encoder_init(&video_encoder, filename)) {
-                    SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to initialize video encoder!\n");
-                    goto cleanup5;
-                }
-
-                SDL_Log("Video encoding initialized");
-                is_video_initialized = true;
+        if (!(state->flags & APP_FLAG_VIDEO_INITIALIZED)) {
+            if (video_encoder_init(&state->video_encoder, state->filename) < 0) {
+                SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to initialize video encoder!\n");
+                return SDL_APP_FAILURE;
             }
-            video_encoder_send_frame(&video_encoder, window_chars);
+
+            SDL_Log("Video encoding initialized");
+            state->flags |= APP_FLAG_VIDEO_INITIALIZED;
+        }
+        video_encoder_send_frame(&state->video_encoder, state->window_chars);
 #else
-            // TODO: Multithreaded image saving
-            if (!save_image(window_chars, WINDOW_WIDTH, WINDOW_HEIGHT, img_num)) {
-                SDL_Log("Failed to save image!");
-                record = false;
-            }
-            img_num++;
+        // TODO: Multithreaded image saving
+        if (!save_image(state->window_chars, WINDOW_WIDTH, WINDOW_HEIGHT, state->img_num)) {
+            SDL_Log("Failed to save image!");
+            state->flags &= ~APP_FLAG_RECORD;
+        }
+        state->img_num++;
 #endif
-        }
-
-        timer_stop(&render_timer);
-
-        char update_time_buf[10] = {0};
-        (void) timer_elapsed_str(&update_timer, COUNT_OF(update_time_buf), update_time_buf);
-        char render_time_buf[10] = {0};
-        (void) timer_elapsed_str(&render_timer, COUNT_OF(render_time_buf), render_time_buf);
-        char title_buf[120] = {0};
-        (void) SDL_snprintf(title_buf, COUNT_OF(title_buf), "%s - update: %s render: %s updates: %d dt: %.10e",
-            WINDOW_TITLE, update_time_buf, render_time_buf, num_updates, dt);
-
-        if (!SDL_SetWindowTitle(window, title_buf)) {
-            SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to set window title!\n%s\n", SDL_GetError());
-            goto cleanup6;
-        }
-
-        if (!SDL_UpdateWindowSurface(window)) {
-            SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to update window surface!\n%s\n", SDL_GetError());
-            goto cleanup6;
-        }
     }
-cleanup6:
-    if (is_video_initialized) {
+
+    timer_stop(&state->render_timer);
+
+    char update_time_buf[10] = {0};
+    (void) timer_elapsed_str(&state->update_timer, COUNT_OF(update_time_buf), update_time_buf);
+    char render_time_buf[10] = {0};
+    (void) timer_elapsed_str(&state->render_timer, COUNT_OF(render_time_buf), render_time_buf);
+    char title_buf[120] = {0};
+    (void) SDL_snprintf(title_buf, COUNT_OF(title_buf), "%s - update: %s render: %s updates: %d dt: %.10e",
+        WINDOW_TITLE, update_time_buf, render_time_buf, state->num_updates, state->dt);
+
+    if (!SDL_SetWindowTitle(state->window, title_buf)) {
+        SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to set window title!\n%s\n", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+
+    if (!SDL_UpdateWindowSurface(state->window)) {
+        SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to update window surface!\n%s\n", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+
+    return SDL_APP_CONTINUE;
+}
+
+static bool handle_view_controls(struct simulation_state* state, const SDL_KeyboardEvent* event) {
+    const float factor = state->view_scale * 0.01f;
+    switch (event->key) {
+        case SDLK_LEFT:
+            state->view_pos.x -= WINDOW_HEIGHT / factor;
+            return true;
+        case SDLK_RIGHT:
+            state->view_pos.x += WINDOW_WIDTH / factor;
+            return true;
+        case SDLK_UP:
+            state->view_pos.y -= WINDOW_HEIGHT / factor;
+            return true;
+        case SDLK_DOWN:
+            state->view_pos.y += WINDOW_HEIGHT / factor;
+            return true;
+        case SDLK_O:
+            state->view_scale *= 0.98f;
+            return true;
+        case SDLK_I:
+            state->view_scale *= 1.02f;
+            return true;
+        case SDLK_E:
+            state->brightness *= 1.05f;
+            return true;
+        case SDLK_W:
+            state->brightness *= 0.95f;
+            return true;
+        default: return false;
+    }
+}
+
+static bool handle_simulation_controls(struct simulation_state* state, const SDL_KeyboardEvent* event) {
+    switch (event->key) {
+        case SDLK_SPACE:
+            state->flags ^= APP_FLAG_SIMULATE;
+            return true;
+        case SDLK_R:
+            particle_system_reset(&state->particle_system);
+            timer_reset(&state->update_timer);
+            state->flags &= ~APP_FLAG_SIMULATE;
+            return true;
+        case SDLK_S:
+            state->flags |= APP_FLAG_SIMULATE | APP_FLAG_RECORD;
+            return true;
+        case SDLK_F:
+            state->num_updates += 1;
+            return true;
+        case SDLK_G:
+            state->num_updates -= 1;
+            state->num_updates = SDL_max(state->num_updates, 0);
+            return true;
+        case SDLK_V:
+            state->dt *= 1.1f;
+            return true;
+        case SDLK_B:
+            state->dt *= 1.0f / 1.1f;
+            return true;
+        case SDLK_H:
+            timer_reset(&state->update_timer);
+            timer_reset(&state->render_timer);
+            return true;
+        default: return false;
+    }
+}
+
+
+static SDL_AppResult handle_key_down(struct simulation_state* state, const SDL_KeyboardEvent* event) {
+
+    if (event->key == SDLK_ESCAPE) {
+        return SDL_APP_SUCCESS;
+    }
+
+    if (handle_view_controls(state, event)) {
+        return SDL_APP_CONTINUE;
+    }
+
+    if (handle_simulation_controls(state, event)) {
+        return SDL_APP_CONTINUE;
+    }
+
+    return SDL_APP_CONTINUE;
+}
+
+SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
+    struct simulation_state* state = appstate;
+
+    if (event->type == SDL_EVENT_QUIT) {
+        return SDL_APP_SUCCESS;
+    }
+
+    if (event->type == SDL_EVENT_MOUSE_WHEEL) {
+        const float zoom_factor = (event->wheel.y < 0) ? 0.95f : 1.05f;
+        const float change_x = state->mouse_pos.x - WINDOW_WIDTH / 2.0f;
+        const float change_y = state->mouse_pos.y - WINDOW_HEIGHT / 2.0f;
+
+        state->view_pos.x += change_x / state->view_scale;
+        state->view_pos.y += change_y / state->view_scale;
+
+        state->view_scale *= zoom_factor;
+
+        state->view_pos.x = state->view_pos.x - change_x / state->view_scale;
+        state->view_pos.y = state->view_pos.y - change_y / state->view_scale;
+    } else if (event->type == SDL_EVENT_KEY_DOWN) {
+        return handle_key_down(state, &event->key);
+    }
+
+    return SDL_APP_CONTINUE;
+}
+
+void SDL_AppQuit(void *appstate, SDL_AppResult result) {
+
+    struct simulation_state* state = appstate;
+
+    if (state->flags & APP_FLAG_VIDEO_INITIALIZED) {
         SDL_Log("Finishing video encoding");
-        video_encoder_finish(&video_encoder);
+        video_encoder_finish(&state->video_encoder);
     }
-cleanup5:
-    SDL_free(window_values);
-    SDL_free(tmp_buf);
-    SDL_free(window_chars);
-cleanup4:
-    particle_system_free(&particle_system);
-cleanup3:
-    SDL_DestroyWindow(window);
-cleanup2:
+
+    SDL_free(state->window_values);
+    SDL_free(state->tmp_buf);
+    SDL_free(state->window_chars);
+
+    particle_system_free(&state->particle_system);
+
+    SDL_DestroyWindow(state->window);
+
+    SDL_free(state);
+
     SDL_Quit();
-cleanup1:
-    return 0;
 }

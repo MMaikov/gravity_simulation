@@ -276,40 +276,42 @@ void blur5x5(float* values, uint32_t width, uint32_t height, float* tmp_buf)
 }
 
 static void stbi_write_func_SDL(void* context, void* data, int size) {
-    SDL_IOStream* ios = (SDL_IOStream*) context;
+    SDL_IOStream* ios = context;
     SDL_WriteIO(ios, data, size);
 }
 
 bool save_image(uint8_t* pixels, uint32_t width, uint32_t height, uint32_t name_index) {
 
     if (!SDL_CreateDirectory("img/")) {
-        SDL_Log("Failed to create directory\n%s\n", SDL_GetError());
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create directory\n%s\n", SDL_GetError());
         return false;
     }
 
     char filename[32];
     const int written = SDL_snprintf(filename, COUNT_OF(filename), "img/%07d.jpg", name_index);
     if (written < 15) {
-        SDL_Log("SDL_snprintf failed or truncated trying to format filename. Written %d bytes, but excepted to write 15 bytes.", written);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_snprintf failed or truncated trying to format filename. Written %d bytes, but excepted to write 15 bytes.", written);
         return false;
     }
 
     SDL_IOStream* ios = SDL_IOFromFile(filename, "wb");
     if (!ios) {
-        SDL_Log("SDL_IOFromFile failed.\n%s", SDL_GetError());
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_IOFromFile failed.\n%s\n", SDL_GetError());
         return false;
     }
 
     const bool status = stbi_write_jpg_to_func(stbi_write_func_SDL, ios, width, height, 1, pixels, 90);
     if (!status) {
-        SDL_Log("stbi_write_jpg_to_func failed.");
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "stbi_write_jpg_to_func failed.");
         if (!SDL_CloseIO(ios)) {
-            SDL_Log("SDL_CloseIO failed.\n%s", SDL_GetError());
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_CloseIO failed.\n%s", SDL_GetError());
         }
         return false;
     }
 
-    SDL_CloseIO(ios);
+    if (!SDL_CloseIO(ios)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to close file.\n%s\n", SDL_GetError());
+    }
 
     return true;
 }
