@@ -34,10 +34,6 @@ static int particle_thread_func(void* data)
 	float* vel_y = thread_data->system->buffer.vel_y[thread_data->thread_id];
 
 	while (1) {
-		if (SDL_GetAtomicInt(thread_data->exit_flag)) {
-			break;
-		}
-
 		SDL_WaitSemaphore(thread_data->work_start);
 
 		if (SDL_GetAtomicInt(thread_data->exit_flag)) {
