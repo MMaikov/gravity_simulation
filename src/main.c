@@ -64,7 +64,6 @@ struct simulation_state {
     SDL_Window* window;
     SDL_Surface* surface;
 
-    SDL_Rect window_rectangle;
     const SDL_PixelFormatDetails* pixel_format_details;
 
     struct particle_system particle_system;
@@ -152,12 +151,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
         return SDL_APP_FAILURE;
     }
 
-    // Perhaps use SDL_GetWindowPosition and SDL_GetWindowSizeInPixels
-    state->window_rectangle.x = 0;
-    state->window_rectangle.y = 0;
-    state->window_rectangle.w = WINDOW_WIDTH;
-    state->window_rectangle.h = WINDOW_HEIGHT;
-
     state->pixel_format_details = SDL_GetPixelFormatDetails(state->surface->format);
     if (state->pixel_format_details == NULL) {
         SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to get pixel format details!\n%s\n", SDL_GetError());
@@ -221,7 +214,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
     timer_start(&state->render_timer);
 
-    if (!SDL_FillSurfaceRect(state->surface, &state->window_rectangle,
+    if (!SDL_FillSurfaceRect(state->surface, NULL,
         SDL_MapRGB(state->pixel_format_details, NULL, 0, 0, 0))) {
         SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to fill surface!\n%s\n", SDL_GetError());
         return SDL_APP_FAILURE;
