@@ -334,8 +334,7 @@ static bool handle_simulation_controls(struct simulation_state* state, const SDL
             state->num_updates += 1;
             return true;
         case SDLK_G:
-            state->num_updates -= 1;
-            state->num_updates = SDL_max(state->num_updates, 0);
+            state->num_updates = state->num_updates == 0 ? 0 : state->num_updates - 1;
             return true;
         case SDLK_V:
             state->dt *= 1.1f;
