@@ -26,7 +26,7 @@ static int particle_thread_func(void* data)
 	SDL_Time time;
 	SDL_GetCurrentTime(&time);
 	pcg32_random_t rng = PCG32_INITIALIZER;
-	pcg32_srandom_r(&rng, time ^ (intptr_t)&SDL_snprintf, (intptr_t)&SDL_CreateCondition ^ 0xDEADBEEF + thread_data->thread_id);
+	pcg32_srandom_r(&rng, time, thread_data->thread_id);
 
 	const float* pos_x = thread_data->system->pos_x;
 	const float* pos_y = thread_data->system->pos_y;
@@ -346,8 +346,12 @@ void particle_system_free(struct particle_system* system)
 		SDL_WaitThread(system->threads[i], NULL);
 	}
 
-	SDL_DestroySemaphore(system->work_start);
-	SDL_DestroySemaphore(system->work_done);
+	if (system->work_start) {
+		SDL_DestroySemaphore(system->work_start);
+	}
+	if (system->work_done) {
+		SDL_DestroySemaphore(system->work_done);
+	}
 
 	for (uint32_t i = 0; i < system->num_threads; ++i) {
 		SDL_aligned_free(system->buffer.vel_x[i]);

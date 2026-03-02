@@ -1,5 +1,7 @@
 #include <SDL.h>
 
+#include "getopt.h"
+
 #define SDL_MAIN_USE_CALLBACKS
 #include <SDL3/SDL_main.h>
 
@@ -93,6 +95,14 @@ struct simulation_state {
     char filename[25];
 };
 
+void print_usage(const char *progname) {
+    SDL_Log("Usage: %s [OPTIONS]\n", progname);
+    SDL_Log("Does gravity simulation on particles. Optimized for SIMD and multithreading.\n\n");
+    SDL_Log("Options:\n");
+    SDL_Log("  -h            Display this help message and exit\n");
+    SDL_Log("  -n            Specify number of particles to simulate.\n");
+}
+
 // ReSharper disable once CppParameterMayBeConst
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
 
@@ -104,14 +114,16 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
 
     uint32_t particle_count = NUM_PARTICLES;
 
-    // TODO: Proper command line argument parsing
-    if (argc > 1) {
-        if (SDL_strncmp("--particles", argv[1], SDL_strlen(argv[1])) == 0) {
-            if (argc > 2) {
-                particle_count = SDL_strtoul(argv[2], NULL, 10);
-            } else {
-                SDL_Log("No particle count specified");
-            }
+    int opt;
+    while ((opt = getopt(argc, argv, "hn:")) != -1) {
+        switch (opt) {
+            case 'h':
+                print_usage(argv[0]);
+                return SDL_APP_FAILURE;
+            case 'n':
+                particle_count = SDL_strtoul(optarg, NULL, 10);
+                break;
+            default: SDL_Log("Unknown option!");
         }
     }
 
@@ -385,6 +397,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 }
 
 void SDL_AppQuit(void *appstate, SDL_AppResult result) {
+    (void) result;
 
     struct simulation_state* state = appstate;
 
